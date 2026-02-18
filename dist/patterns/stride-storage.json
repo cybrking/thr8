@@ -1,0 +1,163 @@
+{
+  "component_type": "storage",
+  "version": "1.0.0",
+  "patterns": [
+    {
+      "id": "STOR-SPOOF-001",
+      "category": "Spoofing",
+      "title": "Unauthorized storage access via stolen credentials",
+      "description": "An attacker obtains storage service credentials such as access keys, shared access signatures, or service account tokens through code repository exposure, social engineering, or compromised CI/CD pipelines. These credentials grant the attacker the ability to impersonate a legitimate service and access stored data.",
+      "default_likelihood": "high",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Use IAM roles and instance profiles instead of long-lived access keys",
+        "Implement automatic credential rotation with short expiry periods",
+        "Monitor for credential usage from unusual locations or IP addresses",
+        "Enable secret scanning in code repositories to detect leaked credentials",
+        "Use temporary credentials with least-privilege scoping for all storage operations"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"
+    },
+    {
+      "id": "STOR-TAMP-001",
+      "category": "Tampering",
+      "title": "Stored data modification without integrity checks",
+      "description": "Files or objects in storage are modified without detection because the system does not maintain or verify integrity checksums. An attacker who gains write access can alter stored data such as configuration files, uploaded documents, or backups without triggering any alerts or validation failures.",
+      "default_likelihood": "medium",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Implement content integrity verification using cryptographic checksums such as SHA-256",
+        "Enable object versioning to maintain a history of changes and allow rollback",
+        "Use write-once or immutable storage policies for critical data",
+        "Implement change detection alerts that notify administrators of unexpected modifications",
+        "Apply digital signatures to critical stored artifacts to verify authenticity"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:H/A:L"
+    },
+    {
+      "id": "STOR-REPU-001",
+      "category": "Repudiation",
+      "title": "Missing storage access logging",
+      "description": "Storage access events such as reads, writes, and deletions are not logged, making it impossible to determine who accessed or modified specific files. Without access logging, incident response teams cannot trace data breaches, and organizations cannot demonstrate compliance with data access audit requirements.",
+      "default_likelihood": "medium",
+      "default_impact": "medium",
+      "common_mitigations": [
+        "Enable server access logging or data event logging on all storage resources",
+        "Forward storage access logs to a centralized log management and SIEM system",
+        "Configure log retention policies that meet organizational and regulatory requirements",
+        "Implement alerting on anomalous access patterns such as bulk downloads or deletions",
+        "Protect log integrity by storing logs in a separate, restricted account or service"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:N"
+    },
+    {
+      "id": "STOR-INFO-001",
+      "category": "Information Disclosure",
+      "title": "Public bucket/container exposure",
+      "description": "Cloud storage buckets or containers are configured with public access permissions, allowing anyone on the internet to list and download stored objects. This is one of the most common causes of large-scale data breaches, frequently exposing sensitive customer data, internal documents, or database backups.",
+      "default_likelihood": "medium",
+      "default_impact": "critical",
+      "common_mitigations": [
+        "Enable account-level public access blocking to prevent accidental public exposure",
+        "Use infrastructure-as-code to enforce private-by-default storage configurations",
+        "Implement continuous monitoring for publicly accessible storage resources",
+        "Conduct regular automated scans to detect misconfigured storage permissions",
+        "Apply bucket policies that explicitly deny public access except for intentionally public content"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
+    },
+    {
+      "id": "STOR-INFO-002",
+      "category": "Information Disclosure",
+      "title": "Missing encryption at rest for stored files",
+      "description": "Files and objects stored in cloud or on-premises storage are not encrypted at rest. If the underlying storage media is compromised through physical theft, unauthorized snapshot access, or insider threat, all stored data is immediately readable without any decryption barrier.",
+      "default_likelihood": "medium",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Enable server-side encryption with service-managed or customer-managed keys",
+        "Implement client-side encryption for highly sensitive data before uploading",
+        "Use a key management service with automatic key rotation and access controls",
+        "Enforce encryption-at-rest policies through infrastructure-as-code and compliance checks"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:L/AC:L/PR:H/UI:N/S:U/C:H/I:N/A:N"
+    },
+    {
+      "id": "STOR-INFO-003",
+      "category": "Information Disclosure",
+      "title": "Pre-signed URL abuse (long expiry)",
+      "description": "Pre-signed URLs for accessing private storage objects are generated with excessively long expiration periods. If a pre-signed URL is shared, leaked, or intercepted, anyone who obtains it can access the referenced object for the entire validity period without any additional authentication or authorization checks.",
+      "default_likelihood": "medium",
+      "default_impact": "medium",
+      "common_mitigations": [
+        "Set pre-signed URL expiration times to the minimum required duration, ideally minutes not hours",
+        "Log all pre-signed URL generation events with the requesting user and expiry details",
+        "Implement URL usage tracking to detect sharing or abnormal access patterns",
+        "Use one-time-use download tokens instead of pre-signed URLs for sensitive content"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:N/A:N"
+    },
+    {
+      "id": "STOR-DOS-001",
+      "category": "Denial of Service",
+      "title": "Storage quota exhaustion",
+      "description": "An attacker uploads a large volume of data to fill available storage capacity, causing legitimate write operations to fail. This can disrupt application functionality that depends on storage availability, including log collection, user file uploads, backup operations, and data processing pipelines.",
+      "default_likelihood": "medium",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Implement per-user and per-application upload quotas and file size limits",
+        "Monitor storage utilization and configure alerts at defined threshold levels",
+        "Implement lifecycle policies to automatically archive or delete aged data",
+        "Use rate limiting on upload endpoints to prevent rapid storage consumption",
+        "Separate critical storage resources from user-facing upload targets"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:H"
+    },
+    {
+      "id": "STOR-DOS-002",
+      "category": "Denial of Service",
+      "title": "Hotlinking/bandwidth abuse",
+      "description": "External websites or applications directly link to stored resources, consuming bandwidth and increasing costs without authorization. High-traffic hotlinking can exhaust bandwidth allocations, degrade performance for legitimate users, and result in unexpected storage egress charges.",
+      "default_likelihood": "medium",
+      "default_impact": "medium",
+      "common_mitigations": [
+        "Implement referrer-based access controls to restrict which domains can link to stored content",
+        "Use a CDN with hotlink protection and bandwidth throttling capabilities",
+        "Serve content through application-controlled endpoints rather than direct storage URLs",
+        "Monitor egress traffic patterns and alert on unexpected bandwidth spikes"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+    },
+    {
+      "id": "STOR-ELEV-001",
+      "category": "Elevation of Privilege",
+      "title": "Overly permissive storage IAM policies",
+      "description": "Storage access policies grant broader permissions than required, such as full read-write access to all buckets when only read access to a specific prefix is needed. Overly permissive policies increase the impact of any credential compromise and may allow lateral movement to access data across organizational boundaries.",
+      "default_likelihood": "high",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Apply the principle of least privilege with resource-level and condition-based IAM policies",
+        "Use separate IAM roles for different application functions with scoped storage permissions",
+        "Implement IAM Access Analyzer or equivalent tools to identify overly permissive policies",
+        "Conduct regular IAM policy reviews and remove unused or excessive permissions",
+        "Use service control policies or permission boundaries to set maximum permission limits"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:L"
+    },
+    {
+      "id": "STOR-ELEV-002",
+      "category": "Elevation of Privilege",
+      "title": "Cross-account storage access",
+      "description": "Storage resources are accessible from other cloud accounts due to misconfigured cross-account access policies or overly broad resource-based policies. An attacker who compromises a different account in the organization can leverage cross-account trust to access sensitive storage resources they should not have permission to reach.",
+      "default_likelihood": "low",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Restrict cross-account access to explicitly approved accounts and roles only",
+        "Use organization-level SCPs to prevent unauthorized cross-account resource sharing",
+        "Implement condition keys in resource policies to limit access by organization ID or account",
+        "Regularly audit cross-account access configurations and trust relationships",
+        "Use VPC endpoints and private networking to limit storage access to approved network paths"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:C/C:H/I:L/A:N"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+## {{framework}} Compliance Assessment
+
+**Version**: {{version}}
+**Assessment Date**: {{assessment_date}}
+**Overall Score**: {{summary.overall_score}}%
+
+| Status | Count |
+|--------|-------|
+| Compliant | {{summary.compliant}} |
+| Partial | {{summary.partial}} |
+| Non-Compliant | {{summary.non_compliant}} |
+
+### Controls
+
+{{#each controls}}
+#### {{this.control_id}}: {{this.description}}
+
+**Status**: {{statusIcon this.status}} {{this.status}} ({{this.coverage}}% coverage)
+
+{{#if this.evidence.length}}
+**Evidence:**
+{{#each this.evidence}}
+- {{this}}
+{{/each}}
+{{/if}}
+
+{{#if this.gaps.length}}
+**Gaps:**
+{{#each this.gaps}}
+- {{this}}
+{{/each}}
+{{/if}}
+
+{{#if this.recommendations.length}}
+**Recommendations:**
+{{#each this.recommendations}}
+- {{this}}
+{{/each}}
+{{/if}}
+
+{{/each}}
