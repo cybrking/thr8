@@ -1,0 +1,164 @@
+{
+  "component_type": "database",
+  "version": "1.0.0",
+  "patterns": [
+    {
+      "id": "DB-SPOOF-001",
+      "category": "Spoofing",
+      "title": "Database credential theft",
+      "description": "An attacker obtains valid database credentials through phishing, configuration file exposure, or memory scraping. Once credentials are compromised, the attacker can impersonate a legitimate user or service and gain full access to the database without triggering anomaly-based detection systems.",
+      "default_likelihood": "high",
+      "default_impact": "critical",
+      "common_mitigations": [
+        "Use IAM-based or certificate-based database authentication instead of static credentials",
+        "Store credentials in a secrets manager with automatic rotation",
+        "Restrict database network access to known application subnets only",
+        "Enable database connection auditing to detect anomalous access patterns",
+        "Implement short-lived credential tokens with automatic expiry"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+    },
+    {
+      "id": "DB-TAMP-001",
+      "category": "Tampering",
+      "title": "SQL Injection",
+      "description": "An attacker injects malicious SQL statements through application input fields that are not properly sanitized. Successful exploitation can lead to unauthorized data access, data modification, deletion, or execution of administrative operations on the database server.",
+      "default_likelihood": "high",
+      "default_impact": "critical",
+      "common_mitigations": [
+        "Use parameterized queries or prepared statements for all database interactions",
+        "Implement input validation and sanitization at the application layer",
+        "Apply the principle of least privilege to database accounts used by applications",
+        "Deploy a Web Application Firewall (WAF) with SQL injection detection rules",
+        "Conduct regular code reviews and static analysis for injection vulnerabilities"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+    },
+    {
+      "id": "DB-TAMP-002",
+      "category": "Tampering",
+      "title": "Unauthorized data modification via direct DB access",
+      "description": "An insider or attacker with network access bypasses the application layer and connects directly to the database to modify records. This circumvents application-level validation, authorization checks, and audit trails, allowing arbitrary changes to critical business data.",
+      "default_likelihood": "medium",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Restrict direct database access using network security groups and firewall rules",
+        "Disable interactive login for application service accounts",
+        "Implement database activity monitoring to detect direct access attempts",
+        "Use database triggers or row-level security to enforce data integrity constraints",
+        "Require multi-party approval for any direct database modifications in production"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:H/A:L"
+    },
+    {
+      "id": "DB-REPU-001",
+      "category": "Repudiation",
+      "title": "Missing database audit logging",
+      "description": "The database does not maintain sufficient audit logs for data access and modification events. Without comprehensive logging, it is impossible to determine who accessed or changed specific records, undermining forensic investigation and regulatory compliance efforts.",
+      "default_likelihood": "medium",
+      "default_impact": "medium",
+      "common_mitigations": [
+        "Enable native database audit logging for all DDL and DML operations",
+        "Ship database logs to a centralized, tamper-proof log management system",
+        "Configure log retention policies that meet regulatory requirements",
+        "Implement alerting on high-risk database operations such as bulk deletes or schema changes",
+        "Regularly review and test audit log completeness"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:N"
+    },
+    {
+      "id": "DB-INFO-001",
+      "category": "Information Disclosure",
+      "title": "Unencrypted data at rest",
+      "description": "Sensitive data stored in the database is not encrypted at rest, leaving it vulnerable to exposure through physical media theft, snapshot access, or unauthorized filesystem access. Regulatory frameworks such as PCI-DSS and HIPAA typically require encryption of sensitive data at rest.",
+      "default_likelihood": "medium",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Enable Transparent Data Encryption (TDE) or equivalent at the database engine level",
+        "Use column-level encryption for highly sensitive fields such as PII and payment data",
+        "Encrypt database storage volumes using platform-managed or customer-managed keys",
+        "Implement key management best practices with regular key rotation"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:L/AC:L/PR:H/UI:N/S:U/C:H/I:N/A:N"
+    },
+    {
+      "id": "DB-INFO-002",
+      "category": "Information Disclosure",
+      "title": "Database backup exposure",
+      "description": "Database backups are stored in locations with insufficient access controls or without encryption, making them vulnerable to unauthorized access. Backup files often contain complete copies of production data and can be restored to an attacker-controlled environment for offline analysis.",
+      "default_likelihood": "medium",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Encrypt all database backups using strong encryption algorithms",
+        "Store backups in access-controlled locations with strict IAM policies",
+        "Implement backup access logging and monitoring",
+        "Regularly audit backup storage permissions and access patterns",
+        "Apply the same data classification and protection policies to backups as production data"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"
+    },
+    {
+      "id": "DB-INFO-003",
+      "category": "Information Disclosure",
+      "title": "Excessive database privileges leaking data",
+      "description": "Database users or application service accounts are granted broader privileges than required for their function, allowing access to tables, schemas, or databases beyond their operational need. This increases the blast radius of any compromised account and violates the principle of least privilege.",
+      "default_likelihood": "high",
+      "default_impact": "medium",
+      "common_mitigations": [
+        "Implement role-based access control with granular permissions per schema and table",
+        "Conduct regular access reviews to identify and revoke excessive privileges",
+        "Use database views to restrict which columns and rows are visible to each role",
+        "Separate read-only and read-write service accounts for application tiers"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"
+    },
+    {
+      "id": "DB-DOS-001",
+      "category": "Denial of Service",
+      "title": "Connection pool exhaustion",
+      "description": "An attacker or misbehaving client opens a large number of database connections, exhausting the connection pool and preventing legitimate application instances from obtaining connections. This results in application-level outages even though the database server itself may remain operational.",
+      "default_likelihood": "medium",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Configure connection pool limits and timeouts at both the application and database levels",
+        "Use a connection proxy or pooler such as PgBouncer or ProxySQL to manage connections",
+        "Implement per-client connection quotas to prevent a single source from monopolizing connections",
+        "Set idle connection timeouts to automatically reclaim unused connections",
+        "Monitor connection pool utilization and alert on threshold breaches"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+    },
+    {
+      "id": "DB-DOS-002",
+      "category": "Denial of Service",
+      "title": "Resource-intensive query abuse",
+      "description": "An attacker crafts or triggers computationally expensive queries such as unindexed full table scans, cartesian joins, or deeply nested subqueries that consume excessive CPU, memory, or I/O resources. This can degrade database performance for all users and may cause cascading failures in dependent services.",
+      "default_likelihood": "medium",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Implement query execution time limits and automatic termination of long-running queries",
+        "Use query analysis tools to identify and optimize expensive query patterns",
+        "Apply resource governor or workload management policies to limit per-session resource consumption",
+        "Restrict ad-hoc query execution to authorized analytics users only",
+        "Monitor slow query logs and set up alerts for abnormal query patterns"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:H"
+    },
+    {
+      "id": "DB-ELEV-001",
+      "category": "Elevation of Privilege",
+      "title": "Privilege escalation via shared database accounts",
+      "description": "Multiple users or services share a single database account, typically with elevated privileges. When any one user's credentials are compromised, the attacker gains the full privilege set of the shared account, making it impossible to enforce individual accountability or fine-grained access control.",
+      "default_likelihood": "high",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Assign unique database accounts to each user and service with minimal required privileges",
+        "Implement role-based access control to manage permissions consistently",
+        "Prohibit the use of shared or generic database accounts in security policies",
+        "Use just-in-time privileged access for administrative operations",
+        "Audit and track individual user activity through unique account attribution"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:L"
+    }
+  ]
+}

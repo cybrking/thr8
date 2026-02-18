@@ -1,0 +1,162 @@
+{
+  "component_type": "api",
+  "version": "1.0.0",
+  "patterns": [
+    {
+      "id": "API-SPOOF-001",
+      "category": "Spoofing",
+      "title": "API key/token theft",
+      "description": "An attacker obtains valid API keys or authentication tokens through client-side code inspection, intercepted traffic, or exposure in version control repositories. Stolen tokens allow the attacker to impersonate legitimate API consumers and access protected resources without authorization.",
+      "default_likelihood": "high",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Use short-lived tokens with automatic refresh mechanisms such as OAuth 2.0",
+        "Implement API key rotation policies and revocation capabilities",
+        "Store API keys in secure vaults and never embed them in client-side code or repositories",
+        "Monitor for leaked credentials using secret scanning tools in CI/CD pipelines",
+        "Bind API tokens to specific IP addresses or client certificates where possible"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"
+    },
+    {
+      "id": "API-TAMP-001",
+      "category": "Tampering",
+      "title": "Request body tampering (injection)",
+      "description": "An attacker modifies API request payloads to inject malicious content such as script fragments, OS commands, or query language constructs. Insufficient server-side input validation allows the injected content to be processed, potentially leading to data theft, unauthorized actions, or remote code execution.",
+      "default_likelihood": "high",
+      "default_impact": "critical",
+      "common_mitigations": [
+        "Validate and sanitize all input against a strict schema before processing",
+        "Use allowlist-based input validation rather than blocklist approaches",
+        "Implement request payload signing to detect tampering in transit",
+        "Deploy a WAF with injection attack detection and prevention capabilities",
+        "Apply content-type enforcement to reject unexpected payload formats"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+    },
+    {
+      "id": "API-TAMP-002",
+      "category": "Tampering",
+      "title": "Parameter pollution",
+      "description": "An attacker submits duplicate or conflicting HTTP parameters to exploit inconsistencies in how the API server and any upstream proxies parse parameter values. This can bypass validation logic, override security controls, or alter the intended behavior of API operations.",
+      "default_likelihood": "medium",
+      "default_impact": "medium",
+      "common_mitigations": [
+        "Explicitly define and validate expected parameters, rejecting duplicates",
+        "Use a strict API schema validation library that handles parameter parsing consistently",
+        "Implement request normalization at the API gateway layer",
+        "Test for parameter pollution vulnerabilities in security assessments"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N"
+    },
+    {
+      "id": "API-REPU-001",
+      "category": "Repudiation",
+      "title": "Missing API request logging",
+      "description": "API endpoints do not log sufficient detail about incoming requests, including the caller identity, requested resource, parameters, and response status. Without adequate logging, it is impossible to reconstruct the sequence of events during a security incident or prove that a specific action was performed by a particular user.",
+      "default_likelihood": "medium",
+      "default_impact": "medium",
+      "common_mitigations": [
+        "Log all API requests with caller identity, timestamp, endpoint, parameters, and response code",
+        "Send logs to a centralized, append-only log management system",
+        "Include correlation IDs to trace requests across distributed services",
+        "Implement log integrity protection to prevent tampering with audit trails",
+        "Define and enforce log retention policies aligned with compliance requirements"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:N"
+    },
+    {
+      "id": "API-INFO-001",
+      "category": "Information Disclosure",
+      "title": "Verbose error messages exposing internals",
+      "description": "API error responses include detailed technical information such as stack traces, database query fragments, internal file paths, or framework versions. This information helps attackers map the internal architecture and identify specific technologies and versions to target with known exploits.",
+      "default_likelihood": "high",
+      "default_impact": "medium",
+      "common_mitigations": [
+        "Return generic error messages to clients and log detailed errors server-side only",
+        "Implement a global exception handler that sanitizes all error responses",
+        "Disable debug mode and verbose error output in production environments",
+        "Use unique error reference IDs that map to detailed internal logs"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+    },
+    {
+      "id": "API-INFO-002",
+      "category": "Information Disclosure",
+      "title": "Sensitive data in API responses",
+      "description": "API endpoints return more data than the client requires, including sensitive fields such as internal identifiers, email addresses, password hashes, or personally identifiable information. Over-fetching of data increases the risk of exposure if API responses are logged, cached, or intercepted.",
+      "default_likelihood": "high",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Implement response filtering to return only the fields required by each client",
+        "Use DTOs or view models to control the shape of API responses explicitly",
+        "Apply field-level access control to restrict sensitive attributes based on caller role",
+        "Conduct regular API response reviews to identify unnecessary data exposure",
+        "Classify data fields by sensitivity and enforce output controls accordingly"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"
+    },
+    {
+      "id": "API-INFO-003",
+      "category": "Information Disclosure",
+      "title": "CORS misconfiguration",
+      "description": "The API is configured with overly permissive Cross-Origin Resource Sharing (CORS) policies, such as reflecting any origin or allowing credentials with wildcard origins. This enables malicious websites to make authenticated cross-origin requests to the API, potentially exfiltrating sensitive data from authenticated user sessions.",
+      "default_likelihood": "medium",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Configure CORS to allow only specific, trusted origin domains",
+        "Never reflect the Origin header directly as the Access-Control-Allow-Origin value",
+        "Avoid using wildcard origins when credentials are required",
+        "Regularly audit CORS configuration as part of security reviews"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:L/A:N"
+    },
+    {
+      "id": "API-DOS-001",
+      "category": "Denial of Service",
+      "title": "Missing rate limiting",
+      "description": "The API does not enforce rate limits on incoming requests, allowing an attacker or abusive client to send a high volume of requests that overwhelm backend resources. This can cause service degradation or outages for all legitimate users and may also facilitate brute-force attacks against authentication endpoints.",
+      "default_likelihood": "high",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Implement rate limiting at the API gateway or reverse proxy layer",
+        "Apply per-client and per-endpoint rate limits based on usage patterns",
+        "Use progressive throttling with exponential backoff for repeat offenders",
+        "Return standard 429 Too Many Requests responses with Retry-After headers",
+        "Monitor request rates and alert on anomalous traffic patterns"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+    },
+    {
+      "id": "API-DOS-002",
+      "category": "Denial of Service",
+      "title": "Large payload denial of service",
+      "description": "An attacker sends excessively large request payloads to API endpoints, consuming server memory, CPU, and bandwidth during parsing and processing. Without payload size enforcement, a relatively small number of oversized requests can exhaust server resources and render the API unavailable.",
+      "default_likelihood": "medium",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Enforce maximum request body size limits at the web server and API gateway",
+        "Implement streaming parsers that reject oversized payloads early in processing",
+        "Set timeouts for request processing to prevent resource monopolization",
+        "Use content-length validation to reject requests exceeding defined thresholds"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+    },
+    {
+      "id": "API-ELEV-001",
+      "category": "Elevation of Privilege",
+      "title": "Broken access control (IDOR)",
+      "description": "The API uses predictable or sequential identifiers to reference resources and does not verify that the authenticated user is authorized to access the requested resource. An attacker can enumerate or guess resource identifiers to access or modify data belonging to other users, effectively escalating their privileges.",
+      "default_likelihood": "high",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Implement server-side authorization checks for every resource access based on the authenticated user",
+        "Use non-sequential, unpredictable identifiers such as UUIDs for resource references",
+        "Apply object-level access control policies consistently across all API endpoints",
+        "Include authorization testing in automated API security test suites",
+        "Log and monitor access patterns to detect horizontal privilege escalation attempts"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+    }
+  ]
+}

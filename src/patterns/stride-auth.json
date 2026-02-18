@@ -1,0 +1,162 @@
+{
+  "component_type": "authentication",
+  "version": "1.0.0",
+  "patterns": [
+    {
+      "id": "AUTH-SPOOF-001",
+      "category": "Spoofing",
+      "title": "Credential stuffing",
+      "description": "An attacker uses large sets of previously breached username-password pairs to attempt automated login against the application. Because users frequently reuse passwords across services, credential stuffing attacks have high success rates even when the target application itself has not been breached.",
+      "default_likelihood": "high",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Implement multi-factor authentication to prevent access with stolen passwords alone",
+        "Deploy bot detection mechanisms such as CAPTCHA on login endpoints",
+        "Monitor for abnormal login patterns including high failure rates from single IPs",
+        "Check user passwords against known breached credential databases on registration and login",
+        "Implement progressive account lockout with notification to the account owner"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"
+    },
+    {
+      "id": "AUTH-SPOOF-002",
+      "category": "Spoofing",
+      "title": "JWT token forgery",
+      "description": "An attacker forges or manipulates JSON Web Tokens by exploiting weak signing algorithms, exposed signing keys, or algorithm confusion vulnerabilities such as switching from RS256 to HS256. A forged token allows the attacker to impersonate any user or escalate privileges without providing valid credentials.",
+      "default_likelihood": "medium",
+      "default_impact": "critical",
+      "common_mitigations": [
+        "Use strong asymmetric signing algorithms such as RS256 or ES256 and protect private keys",
+        "Explicitly specify and validate the allowed signing algorithm on the server, rejecting 'none'",
+        "Implement short token expiration times and require refresh token rotation",
+        "Store signing keys in a hardware security module or secure key management service",
+        "Validate all JWT claims including issuer, audience, and expiration on every request"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+    },
+    {
+      "id": "AUTH-SPOOF-003",
+      "category": "Spoofing",
+      "title": "Session hijacking",
+      "description": "An attacker captures a legitimate user's session token through network interception, cross-site scripting, or malware. With the stolen session token, the attacker can impersonate the user for the duration of the session without needing to authenticate, gaining access to all resources available to that user.",
+      "default_likelihood": "medium",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Enforce HTTPS for all communications and set the Secure flag on session cookies",
+        "Set the HttpOnly and SameSite flags on session cookies to prevent script access and CSRF",
+        "Implement session binding to client fingerprints such as IP address or user agent",
+        "Use short session timeouts and require re-authentication for sensitive operations",
+        "Invalidate sessions on password change and provide users with active session management"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:N"
+    },
+    {
+      "id": "AUTH-TAMP-001",
+      "category": "Tampering",
+      "title": "Token manipulation",
+      "description": "An attacker modifies the payload of an authentication token, such as changing user role claims, permission scopes, or user identifiers, to gain unauthorized access. If the server does not properly validate token integrity or relies solely on client-provided claims, the attacker can alter their effective permissions.",
+      "default_likelihood": "medium",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Validate token signatures on every request to detect any payload modifications",
+        "Use server-side session state or an authorization service as the source of truth for permissions",
+        "Implement token binding to prevent replay of modified tokens across different sessions",
+        "Log and alert on token validation failures as potential tampering indicators"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+    },
+    {
+      "id": "AUTH-REPU-001",
+      "category": "Repudiation",
+      "title": "Missing authentication event logging",
+      "description": "The application does not log critical authentication events such as successful logins, failed login attempts, password changes, MFA enrollments, or session invalidations. Without these records, it is impossible to investigate account compromises, detect brute-force attacks, or satisfy audit requirements.",
+      "default_likelihood": "medium",
+      "default_impact": "medium",
+      "common_mitigations": [
+        "Log all authentication events including login success, failure, logout, and token refresh",
+        "Include contextual data such as IP address, user agent, timestamp, and geolocation in logs",
+        "Forward authentication logs to a centralized SIEM for correlation and alerting",
+        "Implement real-time alerting on suspicious authentication patterns",
+        "Retain authentication logs for a period that meets regulatory and forensic requirements"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:N"
+    },
+    {
+      "id": "AUTH-INFO-001",
+      "category": "Information Disclosure",
+      "title": "Account enumeration via error messages",
+      "description": "The authentication system returns different error messages for invalid usernames versus invalid passwords, allowing an attacker to determine which usernames or email addresses are registered. This information enables targeted attacks such as credential stuffing, phishing, or social engineering against confirmed accounts.",
+      "default_likelihood": "high",
+      "default_impact": "medium",
+      "common_mitigations": [
+        "Return identical error messages for invalid username and invalid password scenarios",
+        "Ensure response times are consistent regardless of whether the account exists",
+        "Implement rate limiting on authentication endpoints to slow enumeration attempts",
+        "Use CAPTCHA to limit automated enumeration attacks"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+    },
+    {
+      "id": "AUTH-INFO-002",
+      "category": "Information Disclosure",
+      "title": "Sensitive data in JWT payload",
+      "description": "JSON Web Tokens contain sensitive information such as email addresses, internal user IDs, role details, or personal data in their payload. Since JWT payloads are only base64-encoded and not encrypted, anyone with access to the token can decode and read the contents, leading to unintended information exposure.",
+      "default_likelihood": "medium",
+      "default_impact": "medium",
+      "common_mitigations": [
+        "Minimize the data stored in JWT payloads to only essential claims like subject and expiry",
+        "Use opaque reference tokens with server-side lookups for sensitive user attributes",
+        "Implement JWE (JSON Web Encryption) if sensitive claims must be included in tokens",
+        "Regularly audit JWT payload contents to ensure no unnecessary data exposure"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N"
+    },
+    {
+      "id": "AUTH-DOS-001",
+      "category": "Denial of Service",
+      "title": "Account lockout abuse",
+      "description": "An attacker deliberately triggers account lockout mechanisms by submitting multiple failed login attempts against targeted user accounts. This prevents legitimate users from accessing their accounts and can be used to disrupt operations for key personnel or to create a diversion during a broader attack.",
+      "default_likelihood": "medium",
+      "default_impact": "medium",
+      "common_mitigations": [
+        "Implement progressive delays instead of hard lockouts to slow attacks without denying access",
+        "Use CAPTCHA challenges after a threshold of failed attempts rather than locking the account",
+        "Implement lockout policies based on source IP as well as target account",
+        "Notify account owners of failed login attempts so they can take action",
+        "Provide account recovery mechanisms that do not require support intervention"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+    },
+    {
+      "id": "AUTH-ELEV-001",
+      "category": "Elevation of Privilege",
+      "title": "Missing MFA for privileged operations",
+      "description": "The application does not require multi-factor authentication for sensitive operations such as changing account settings, accessing administrative functions, or performing financial transactions. An attacker who compromises a single authentication factor can perform high-impact actions without an additional verification step.",
+      "default_likelihood": "high",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Require MFA for all administrative and privileged operations",
+        "Implement step-up authentication that prompts for additional factors before sensitive actions",
+        "Support multiple MFA methods including hardware tokens, authenticator apps, and biometrics",
+        "Log and alert when MFA is bypassed or downgraded for any account"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+    },
+    {
+      "id": "AUTH-ELEV-002",
+      "category": "Elevation of Privilege",
+      "title": "Weak password policy",
+      "description": "The application enforces insufficient password complexity requirements, allowing users to set short, common, or easily guessable passwords. Weak passwords are vulnerable to brute-force attacks, dictionary attacks, and credential guessing, significantly lowering the barrier for account compromise.",
+      "default_likelihood": "high",
+      "default_impact": "high",
+      "common_mitigations": [
+        "Enforce minimum password length of at least 12 characters",
+        "Check passwords against lists of commonly breached and weak passwords",
+        "Implement password strength meters to guide users toward stronger choices",
+        "Encourage use of passphrases and password managers rather than complex character requirements",
+        "Require periodic password changes for privileged accounts only, avoiding unnecessary rotation for standard users"
+      ],
+      "cvss_vector_template": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"
+    }
+  ]
+}
