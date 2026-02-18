@@ -1,0 +1,46 @@
+name: 'Threat Model Generator'
+description: 'Auto-generate compliance-ready threat models from repository analysis'
+author: 'threat.dev'
+
+branding:
+  icon: 'shield'
+  color: 'red'
+
+inputs:
+  anthropic-api-key:
+    description: 'Anthropic API key for Claude-powered analysis'
+    required: true
+
+  config-path:
+    description: 'Path to optional .threat-model.yml config'
+    required: false
+    default: '.threat-model.yml'
+
+  frameworks:
+    description: 'Compliance frameworks to assess (SOC2,PCI-DSS,HIPAA)'
+    required: false
+    default: 'SOC2'
+
+  output-formats:
+    description: 'Output formats (markdown,json)'
+    required: false
+    default: 'markdown,json'
+
+  fail-on-high-risk:
+    description: 'Fail build if high-risk unmitigated threats found'
+    required: false
+    default: 'false'
+
+outputs:
+  threats-found:
+    description: 'Total threats identified'
+  high-risk-count:
+    description: 'High-risk unmitigated threats'
+  compliance-score:
+    description: 'Compliance percentage (0-100)'
+  report-path:
+    description: 'Path to generated report'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
