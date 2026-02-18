@@ -1,6 +1,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
 const path = require('path');
+const { parseJsonResponse, callWithContinuation } = require('../utils/parse-json');
 
 class ComplianceAgent {
   constructor(apiKey, frameworkName) {
@@ -24,6 +25,8 @@ class ComplianceAgent {
 
     const systemPrompt = `You are a compliance auditor assessing a system's security controls against the ${this.frameworkName} framework. Evaluate each control requirement, determine compliance status based on the threat model and detected mitigations.
 
+IMPORTANT: Keep evidence and recommendations concise (1 sentence each). Limit gaps to the most critical items only.
+
 Output ONLY valid JSON matching this schema:
 {
   "framework": "${this.frameworkName}",
@@ -35,9 +38,9 @@ Output ONLY valid JSON matching this schema:
       "description": "Control description",
       "status": "compliant|partial|non_compliant",
       "coverage": 0,
-      "evidence": ["Evidence item 1"],
-      "gaps": ["Gap description if any"],
-      "recommendations": ["Recommendation if gaps exist"]
+      "evidence": ["Brief evidence"],
+      "gaps": ["Brief gap if any"],
+      "recommendations": ["Brief recommendation if gaps exist"]
     }
   ],
   "summary": {
@@ -53,9 +56,9 @@ Calculate overall_score as percentage: (compliant * 100 + partial * 50) / total_
 Be specific about evidence from the threat model and actionable in recommendations.`;
 
     try {
-      const response = await this.client.messages.create({
+      const params = {
         model: 'claude-sonnet-4-6',
-        max_tokens: 4096,
+        max_tokens: 16384,
         system: systemPrompt,
         messages: [{
           role: 'user',
@@ -66,10 +69,10 @@ ${JSON.stringify(threatModel, null, 2)}
 
 ${framework ? `Framework Definition:\n${JSON.stringify(framework, null, 2)}` : `Framework: ${this.frameworkName} (definition not available, use standard knowledge)`}`
         }],
-      });
+      };
 
-      const text = response.content[0].text;
-      return this._parseJsonResponse(text);
+      const text = await callWithContinuation(this.client, params);
+      return parseJsonResponse(text);
     } catch (error) {
       console.error('Compliance assessment failed:', error.message);
       return {
@@ -84,21 +87,6 @@ ${framework ? `Framework Definition:\n${JSON.stringify(framework, null, 2)}` : `
         }
       };
     }
-  }
-
-  _parseJsonResponse(text) {
-    // Try code fence extraction first
-    const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
-    if (fenceMatch) {
-      return JSON.parse(fenceMatch[1]);
-    }
-    // Try finding JSON object directly
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start !== -1 && end !== -1) {
-      return JSON.parse(text.substring(start, end + 1));
-    }
-    return JSON.parse(text);
   }
 }
 

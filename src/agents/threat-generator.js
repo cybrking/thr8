@@ -1,6 +1,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
 const path = require('path');
+const { parseJsonResponse, callWithContinuation } = require('../utils/parse-json');
 
 class ThreatGeneratorAgent {
   constructor(apiKey) {
@@ -29,6 +30,8 @@ class ThreatGeneratorAgent {
 
 Use the provided STRIDE patterns as reference but also identify threats specific to this codebase.
 
+IMPORTANT: Keep descriptions concise (1-2 sentences max). Limit to the 3-4 most critical threats per component. Keep CVSS vectors short.
+
 Output ONLY valid JSON matching this schema:
 {
   "components": [
@@ -40,7 +43,7 @@ Output ONLY valid JSON matching this schema:
           "id": "COMPONENT-CATEGORY-NNN",
           "category": "Spoofing|Tampering|Repudiation|Information Disclosure|Denial of Service|Elevation of Privilege",
           "title": "Short threat title",
-          "description": "Detailed description of the threat",
+          "description": "Brief threat description",
           "likelihood": "Low|Medium|High|Critical",
           "impact": "Low|Medium|High|Critical",
           "risk_score": 0.0,
@@ -49,7 +52,7 @@ Output ONLY valid JSON matching this schema:
             {
               "control": "Control name",
               "status": "implemented|partial|missing",
-              "evidence": "Evidence from codebase"
+              "evidence": "Brief evidence"
             }
           ],
           "residual_risk": "Low|Medium|High|Critical"
@@ -68,9 +71,9 @@ Output ONLY valid JSON matching this schema:
 Calculate risk_score using likelihood x impact (1-10 scale). Count unmitigated_high_risk as threats with risk_score >= 7 and no implemented mitigations.`;
 
     try {
-      const response = await this.client.messages.create({
+      const params = {
         model: 'claude-sonnet-4-6',
-        max_tokens: 8192,
+        max_tokens: 16384,
         system: systemPrompt,
         messages: [{
           role: 'user',
@@ -82,10 +85,10 @@ ${JSON.stringify(context, null, 2)}
 STRIDE Reference Patterns:
 ${JSON.stringify(patterns, null, 2)}`
         }],
-      });
+      };
 
-      const text = response.content[0].text;
-      return this._parseJsonResponse(text);
+      const text = await callWithContinuation(this.client, params);
+      return parseJsonResponse(text);
     } catch (error) {
       console.error('Threat generation failed:', error.message);
       return {
@@ -98,21 +101,6 @@ ${JSON.stringify(patterns, null, 2)}`
         }
       };
     }
-  }
-
-  _parseJsonResponse(text) {
-    // Try code fence extraction first
-    const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
-    if (fenceMatch) {
-      return JSON.parse(fenceMatch[1]);
-    }
-    // Try finding JSON object directly
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start !== -1 && end !== -1) {
-      return JSON.parse(text.substring(start, end + 1));
-    }
-    return JSON.parse(text);
   }
 }
 

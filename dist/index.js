@@ -43906,6 +43906,7 @@ module.exports = APISurfaceAgent;
 const Anthropic = __nccwpck_require__(121);
 const fs = __nccwpck_require__(9896);
 const path = __nccwpck_require__(6928);
+const { parseJsonResponse, callWithContinuation } = __nccwpck_require__(5119);
 
 class ComplianceAgent {
   constructor(apiKey, frameworkName) {
@@ -43929,6 +43930,8 @@ class ComplianceAgent {
 
     const systemPrompt = `You are a compliance auditor assessing a system's security controls against the ${this.frameworkName} framework. Evaluate each control requirement, determine compliance status based on the threat model and detected mitigations.
 
+IMPORTANT: Keep evidence and recommendations concise (1 sentence each). Limit gaps to the most critical items only.
+
 Output ONLY valid JSON matching this schema:
 {
   "framework": "${this.frameworkName}",
@@ -43940,9 +43943,9 @@ Output ONLY valid JSON matching this schema:
       "description": "Control description",
       "status": "compliant|partial|non_compliant",
       "coverage": 0,
-      "evidence": ["Evidence item 1"],
-      "gaps": ["Gap description if any"],
-      "recommendations": ["Recommendation if gaps exist"]
+      "evidence": ["Brief evidence"],
+      "gaps": ["Brief gap if any"],
+      "recommendations": ["Brief recommendation if gaps exist"]
     }
   ],
   "summary": {
@@ -43958,9 +43961,9 @@ Calculate overall_score as percentage: (compliant * 100 + partial * 50) / total_
 Be specific about evidence from the threat model and actionable in recommendations.`;
 
     try {
-      const response = await this.client.messages.create({
+      const params = {
         model: 'claude-sonnet-4-6',
-        max_tokens: 4096,
+        max_tokens: 16384,
         system: systemPrompt,
         messages: [{
           role: 'user',
@@ -43971,10 +43974,10 @@ ${JSON.stringify(threatModel, null, 2)}
 
 ${framework ? `Framework Definition:\n${JSON.stringify(framework, null, 2)}` : `Framework: ${this.frameworkName} (definition not available, use standard knowledge)`}`
         }],
-      });
+      };
 
-      const text = response.content[0].text;
-      return this._parseJsonResponse(text);
+      const text = await callWithContinuation(this.client, params);
+      return parseJsonResponse(text);
     } catch (error) {
       console.error('Compliance assessment failed:', error.message);
       return {
@@ -43990,21 +43993,6 @@ ${framework ? `Framework Definition:\n${JSON.stringify(framework, null, 2)}` : `
       };
     }
   }
-
-  _parseJsonResponse(text) {
-    // Try code fence extraction first
-    const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
-    if (fenceMatch) {
-      return JSON.parse(fenceMatch[1]);
-    }
-    // Try finding JSON object directly
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start !== -1 && end !== -1) {
-      return JSON.parse(text.substring(start, end + 1));
-    }
-    return JSON.parse(text);
-  }
 }
 
 module.exports = ComplianceAgent;
@@ -44016,6 +44004,7 @@ module.exports = ComplianceAgent;
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 const Anthropic = __nccwpck_require__(121);
+const { parseJsonResponse, callWithContinuation } = __nccwpck_require__(5119);
 
 class DataFlowAgent {
   constructor(apiKey) {
@@ -44024,6 +44013,8 @@ class DataFlowAgent {
 
   async analyze(context) {
     const systemPrompt = `You are a security architect performing data flow analysis. Given a system inventory (tech stack, infrastructure, API endpoints), map ALL data flows across trust boundaries.
+
+IMPORTANT: Keep descriptions concise. Focus on the most critical data flows (authentication, sensitive data, external integrations).
 
 Output ONLY valid JSON matching this schema:
 {
@@ -44037,7 +44028,7 @@ Output ONLY valid JSON matching this schema:
           "type": "external_user|load_balancer|application|database|external_service",
           "data": ["field1", "field2"],
           "protocol": "HTTPS|TLS|etc",
-          "process": "description of processing",
+          "process": "brief description",
           "operation": "DB operation if applicable"
         }
       ],
@@ -44057,34 +44048,19 @@ Output ONLY valid JSON matching this schema:
 Be thorough: trace user registration, authentication, payment processing, data retrieval, and any external service integration flows.`;
 
     try {
-      const response = await this.client.messages.create({
+      const params = {
         model: 'claude-sonnet-4-6',
-        max_tokens: 4096,
+        max_tokens: 8192,
         system: systemPrompt,
         messages: [{ role: 'user', content: `Analyze data flows for this system:\n\n${JSON.stringify(context, null, 2)}` }],
-      });
+      };
 
-      const text = response.content[0].text;
-      return this._parseJsonResponse(text);
+      const text = await callWithContinuation(this.client, params);
+      return parseJsonResponse(text);
     } catch (error) {
       console.error('Data flow analysis failed:', error.message);
       return { flows: [] };
     }
-  }
-
-  _parseJsonResponse(text) {
-    // Try code fence extraction first
-    const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
-    if (fenceMatch) {
-      return JSON.parse(fenceMatch[1]);
-    }
-    // Try finding JSON object directly
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start !== -1 && end !== -1) {
-      return JSON.parse(text.substring(start, end + 1));
-    }
-    return JSON.parse(text);
   }
 }
 
@@ -44309,6 +44285,7 @@ module.exports = TechStackAgent;
 const Anthropic = __nccwpck_require__(121);
 const fs = __nccwpck_require__(9896);
 const path = __nccwpck_require__(6928);
+const { parseJsonResponse, callWithContinuation } = __nccwpck_require__(5119);
 
 class ThreatGeneratorAgent {
   constructor(apiKey) {
@@ -44337,6 +44314,8 @@ class ThreatGeneratorAgent {
 
 Use the provided STRIDE patterns as reference but also identify threats specific to this codebase.
 
+IMPORTANT: Keep descriptions concise (1-2 sentences max). Limit to the 3-4 most critical threats per component. Keep CVSS vectors short.
+
 Output ONLY valid JSON matching this schema:
 {
   "components": [
@@ -44348,7 +44327,7 @@ Output ONLY valid JSON matching this schema:
           "id": "COMPONENT-CATEGORY-NNN",
           "category": "Spoofing|Tampering|Repudiation|Information Disclosure|Denial of Service|Elevation of Privilege",
           "title": "Short threat title",
-          "description": "Detailed description of the threat",
+          "description": "Brief threat description",
           "likelihood": "Low|Medium|High|Critical",
           "impact": "Low|Medium|High|Critical",
           "risk_score": 0.0,
@@ -44357,7 +44336,7 @@ Output ONLY valid JSON matching this schema:
             {
               "control": "Control name",
               "status": "implemented|partial|missing",
-              "evidence": "Evidence from codebase"
+              "evidence": "Brief evidence"
             }
           ],
           "residual_risk": "Low|Medium|High|Critical"
@@ -44376,9 +44355,9 @@ Output ONLY valid JSON matching this schema:
 Calculate risk_score using likelihood x impact (1-10 scale). Count unmitigated_high_risk as threats with risk_score >= 7 and no implemented mitigations.`;
 
     try {
-      const response = await this.client.messages.create({
+      const params = {
         model: 'claude-sonnet-4-6',
-        max_tokens: 8192,
+        max_tokens: 16384,
         system: systemPrompt,
         messages: [{
           role: 'user',
@@ -44390,10 +44369,10 @@ ${JSON.stringify(context, null, 2)}
 STRIDE Reference Patterns:
 ${JSON.stringify(patterns, null, 2)}`
         }],
-      });
+      };
 
-      const text = response.content[0].text;
-      return this._parseJsonResponse(text);
+      const text = await callWithContinuation(this.client, params);
+      return parseJsonResponse(text);
     } catch (error) {
       console.error('Threat generation failed:', error.message);
       return {
@@ -44406,21 +44385,6 @@ ${JSON.stringify(patterns, null, 2)}`
         }
       };
     }
-  }
-
-  _parseJsonResponse(text) {
-    // Try code fence extraction first
-    const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
-    if (fenceMatch) {
-      return JSON.parse(fenceMatch[1]);
-    }
-    // Try finding JSON object directly
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start !== -1 && end !== -1) {
-      return JSON.parse(text.substring(start, end + 1));
-    }
-    return JSON.parse(text);
   }
 }
 
@@ -45183,6 +45147,127 @@ module.exports = {
   extractSecrets,
   extractMonitoring,
 };
+
+
+/***/ }),
+
+/***/ 5119:
+/***/ ((module) => {
+
+/**
+ * Robust JSON parser for Claude API responses.
+ * Handles code fences, truncated JSON (from max_tokens), and raw text.
+ */
+
+function extractJsonText(text) {
+  // Try code fence extraction first
+  const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
+  if (fenceMatch) {
+    return fenceMatch[1].trim();
+  }
+  // Try finding JSON object directly
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start !== -1 && end !== -1) {
+    return text.substring(start, end + 1);
+  }
+  return text.trim();
+}
+
+function repairTruncatedJson(text) {
+  // Remove trailing incomplete string/value
+  let json = text.replace(/,\s*"[^"]*$/, '');           // trailing incomplete key
+  json = json.replace(/,\s*"[^"]*":\s*"[^"]*$/, '');    // trailing incomplete string value
+  json = json.replace(/,\s*"[^"]*":\s*\d+[^,\]\}]*$/, ''); // trailing incomplete number
+  json = json.replace(/,\s*"[^"]*":\s*$/, '');           // trailing key with no value
+  json = json.replace(/,\s*\{[^}]*$/, '');               // trailing incomplete object in array
+  json = json.replace(/,\s*$/, '');                      // trailing comma
+
+  // Count open brackets and braces, close them
+  let openBraces = 0;
+  let openBrackets = 0;
+  let inString = false;
+  let escape = false;
+
+  for (const ch of json) {
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') openBraces++;
+    if (ch === '}') openBraces--;
+    if (ch === '[') openBrackets++;
+    if (ch === ']') openBrackets--;
+  }
+
+  // Close any unclosed structures
+  for (let i = 0; i < openBrackets; i++) json += ']';
+  for (let i = 0; i < openBraces; i++) json += '}';
+
+  return json;
+}
+
+function parseJsonResponse(text) {
+  const jsonText = extractJsonText(text);
+
+  // Try parsing as-is first
+  try {
+    return JSON.parse(jsonText);
+  } catch (_) {
+    // Fall through to repair
+  }
+
+  // Try repairing truncated JSON
+  try {
+    const repaired = repairTruncatedJson(jsonText);
+    return JSON.parse(repaired);
+  } catch (_) {
+    // Fall through
+  }
+
+  // Last resort: try the raw text
+  return JSON.parse(text);
+}
+
+/**
+ * Call Claude with automatic continuation if response is truncated.
+ * Concatenates text across multiple calls until we get a complete response.
+ */
+async function callWithContinuation(client, params, maxContinuations = 2) {
+  let fullText = '';
+
+  for (let i = 0; i <= maxContinuations; i++) {
+    const messages = i === 0
+      ? params.messages
+      : [
+          ...params.messages,
+          { role: 'assistant', content: fullText },
+          { role: 'user', content: 'Continue the JSON output exactly where you left off. Do not repeat any content.' }
+        ];
+
+    const response = await client.messages.create({
+      ...params,
+      messages,
+    });
+
+    fullText += response.content[0].text;
+
+    // If response completed normally, we're done
+    if (response.stop_reason === 'end_turn') {
+      break;
+    }
+    // If we hit max_tokens, continue
+    if (response.stop_reason === 'max_tokens') {
+      console.log(`Response truncated (iteration ${i + 1}), continuing...`);
+      continue;
+    }
+    break;
+  }
+
+  return fullText;
+}
+
+module.exports = { parseJsonResponse, callWithContinuation };
 
 
 /***/ }),
