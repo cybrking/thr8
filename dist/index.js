@@ -45230,7 +45230,36 @@ function parseJsonResponse(text) {
 }
 
 /**
- * Call Claude with automatic continuation if response is truncated.
+ * Sleep for a given number of milliseconds.
+ */
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Call Claude API with retry on transient errors (429, 529, network errors).
+ * Uses exponential backoff.
+ */
+async function callWithRetry(client, params, maxRetries = 3) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await client.messages.create(params);
+    } catch (error) {
+      const status = error.status || error.statusCode;
+      const isRetryable = status === 429 || status === 529 || status === 503;
+      if (isRetryable && attempt < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+        console.log(`API call failed (${status || 'network'}), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+        await sleep(delay);
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+/**
+ * Call Claude with automatic retry and continuation if response is truncated.
  * Concatenates text across multiple calls until we get a complete response.
  */
 async function callWithContinuation(client, params, maxContinuations = 2) {
@@ -45245,7 +45274,7 @@ async function callWithContinuation(client, params, maxContinuations = 2) {
           { role: 'user', content: 'Continue the JSON output exactly where you left off. Do not repeat any content.' }
         ];
 
-    const response = await client.messages.create({
+    const response = await callWithRetry(client, {
       ...params,
       messages,
     });
