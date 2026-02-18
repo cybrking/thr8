@@ -17,22 +17,39 @@
 | {{this.framework}} Score | {{this.summary.overall_score}}% |
 {{/each}}
 
-## Data Flow Diagrams
+## System Architecture
+
+```mermaid
+graph LR
+{{#each dataFlows.flows}}
+{{#each this.steps}}
+    {{../id}}_{{@index}}["{{this.component}}<br/><i>{{this.type}}</i>"]
+{{/each}}
+{{#each this.steps}}
+{{#unless @last}}
+    {{../id}}_{{@index}} -->|"{{#if this.protocol}}{{this.protocol}}{{else}}internal{{/if}}"| {{../id}}_{{add @index 1}}
+{{/unless}}
+{{/each}}
+{{/each}}
+{{#each dataFlows.flows}}
+{{#each this.trust_boundaries}}
+    TB_{{../../id}}_{{@index}}[/"🔒 {{this.from}} → {{this.to}}<br/>{{this.control}}"/]
+{{/each}}
+{{/each}}
+```
+
+## Data Flows
 
 {{#each dataFlows.flows}}
 ### {{this.name}}
 
 **Data Classification**: {{this.data_classification}}
 
-```mermaid
-graph LR
+| Step | Component | Type | Protocol | Data |
+|------|-----------|------|----------|------|
 {{#each this.steps}}
-    {{@index}}["{{this.component}}"]{{#unless @last}} --> {{/unless}}
+| {{add @index 1}} | {{this.component}} | {{this.type}} | {{this.protocol}} | {{#each this.data}}{{this}}{{#unless @last}}, {{/unless}}{{/each}} |
 {{/each}}
-{{#each this.trust_boundaries}}
-    TB{{@index}}[/"{{this.from}} → {{this.to}}: {{this.control}}"/]
-{{/each}}
-```
 
 **Trust Boundaries:**
 {{#each this.trust_boundaries}}
