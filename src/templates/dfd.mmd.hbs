@@ -1,0 +1,13 @@
+graph LR
+{{#each flows}}
+  subgraph {{this.name}}
+  {{#each this.steps}}
+    {{../id}}_{{@index}}["{{this.component}}<br/>{{this.type}}"]
+  {{/each}}
+  {{#each this.steps}}
+    {{#unless @last}}
+    {{../id}}_{{@index}} -->|"{{#if this.protocol}}{{this.protocol}}{{else}}internal{{/if}}"| {{../id}}_{{add @index 1}}
+    {{/unless}}
+  {{/each}}
+  end
+{{/each}}
