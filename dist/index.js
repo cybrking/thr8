@@ -43974,8 +43974,7 @@ ${framework ? `Framework Definition:\n${JSON.stringify(framework, null, 2)}` : `
       });
 
       const text = response.content[0].text;
-      const jsonMatch = text.match(/```json\n?([\s\S]*?)\n?```/) || [null, text];
-      return JSON.parse(jsonMatch[1]);
+      return this._parseJsonResponse(text);
     } catch (error) {
       console.error('Compliance assessment failed:', error.message);
       return {
@@ -43990,6 +43989,21 @@ ${framework ? `Framework Definition:\n${JSON.stringify(framework, null, 2)}` : `
         }
       };
     }
+  }
+
+  _parseJsonResponse(text) {
+    // Try code fence extraction first
+    const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
+    if (fenceMatch) {
+      return JSON.parse(fenceMatch[1]);
+    }
+    // Try finding JSON object directly
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start !== -1 && end !== -1) {
+      return JSON.parse(text.substring(start, end + 1));
+    }
+    return JSON.parse(text);
   }
 }
 
@@ -44051,12 +44065,26 @@ Be thorough: trace user registration, authentication, payment processing, data r
       });
 
       const text = response.content[0].text;
-      const jsonMatch = text.match(/```json\n?([\s\S]*?)\n?```/) || [null, text];
-      return JSON.parse(jsonMatch[1]);
+      return this._parseJsonResponse(text);
     } catch (error) {
       console.error('Data flow analysis failed:', error.message);
       return { flows: [] };
     }
+  }
+
+  _parseJsonResponse(text) {
+    // Try code fence extraction first
+    const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
+    if (fenceMatch) {
+      return JSON.parse(fenceMatch[1]);
+    }
+    // Try finding JSON object directly
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start !== -1 && end !== -1) {
+      return JSON.parse(text.substring(start, end + 1));
+    }
+    return JSON.parse(text);
   }
 }
 
@@ -44365,8 +44393,7 @@ ${JSON.stringify(patterns, null, 2)}`
       });
 
       const text = response.content[0].text;
-      const jsonMatch = text.match(/```json\n?([\s\S]*?)\n?```/) || [null, text];
-      return JSON.parse(jsonMatch[1]);
+      return this._parseJsonResponse(text);
     } catch (error) {
       console.error('Threat generation failed:', error.message);
       return {
@@ -44379,6 +44406,21 @@ ${JSON.stringify(patterns, null, 2)}`
         }
       };
     }
+  }
+
+  _parseJsonResponse(text) {
+    // Try code fence extraction first
+    const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
+    if (fenceMatch) {
+      return JSON.parse(fenceMatch[1]);
+    }
+    // Try finding JSON object directly
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start !== -1 && end !== -1) {
+      return JSON.parse(text.substring(start, end + 1));
+    }
+    return JSON.parse(text);
   }
 }
 
