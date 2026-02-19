@@ -31,48 +31,51 @@ jest.mock('@anthropic-ai/sdk', () => {
                 data_classification: 'PII',
                 trust_boundaries: []
               }]
-            })}]
+            })}],
+            stop_reason: 'end_turn'
           });
         }
-        if (system.includes('threat model') || system.includes('STRIDE')) {
+        if (system.includes('PASTA')) {
           return Promise.resolve({
             content: [{ type: 'text', text: JSON.stringify({
-              components: [{
-                name: 'Express API',
-                type: 'process',
-                threats: [{
-                  id: 'T-001',
-                  category: 'Spoofing',
-                  title: 'Test threat',
-                  description: 'Test',
-                  likelihood: 'Medium',
-                  impact: 'High',
-                  risk_score: 7.0,
-                  mitigations: [],
-                  residual_risk: 'High'
-                }]
+              business_objectives: [{ objective: 'Data Integrity', impact_of_breach: 'High', description: 'Test', tech_context: 'Node.js' }],
+              overall_risk_status: 'HIGH',
+              attack_surfaces: [{
+                name: 'API',
+                vector: 'HTTP',
+                weakness: 'No auth',
+                vulnerabilities: [{ id: 'V-001', title: 'Test vuln', description: 'Test', severity: 'Critical' }]
+              }],
+              attack_scenarios: [{
+                name: 'Test Attack',
+                objective: 'Breach',
+                steps: [{ phase: 'Exploitation', action: 'Access API', exploits: ['V-001'] }]
               }],
               summary: {
-                total_threats: 1,
-                by_category: { Spoofing: 1 },
-                by_risk: { critical: 0, high: 1, medium: 0, low: 0 },
-                unmitigated_high_risk: 1
+                total_vulnerabilities: 1,
+                critical: 1, high: 0, medium: 0, low: 0,
+                attack_scenarios: 1,
+                attack_surfaces: 1
               }
-            })}]
+            })}],
+            stop_reason: 'end_turn'
           });
         }
-        if (system.includes('compliance') || system.includes('auditor')) {
+        if (system.includes('Stage 7') || system.includes('risk analyst')) {
           return Promise.resolve({
             content: [{ type: 'text', text: JSON.stringify({
               framework: 'SOC2',
               version: '2017',
               assessment_date: '2026-02-17',
+              risk_analysis: [{ risk_id: 'R-001', title: 'Test Risk', pasta_level: 'Critical', business_impact: 'High', mitigation_complexity: 'Medium', linked_vulnerabilities: ['V-001'] }],
               controls: [{ control_id: 'CC6.1', description: 'Access', status: 'compliant', coverage: 100, evidence: ['JWT'], gaps: [], recommendations: [] }],
+              tactical_recommendations: [{ priority: 'Immediate', action: 'Fix auth', addresses: ['R-001'] }],
               summary: { total_controls: 1, compliant: 1, partial: 0, non_compliant: 0, overall_score: 100 }
-            })}]
+            })}],
+            stop_reason: 'end_turn'
           });
         }
-        return Promise.resolve({ content: [{ type: 'text', text: '{}' }] });
+        return Promise.resolve({ content: [{ type: 'text', text: '{}' }], stop_reason: 'end_turn' });
       })
     }
   }));
@@ -84,6 +87,7 @@ describe('Main Orchestrator', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.GITHUB_WORKSPACE = FIXTURE_PATH;
+    process.env.GITHUB_REPOSITORY = 'cybrking/test-project';
     mockCore.getInput.mockImplementation((name) => {
       const inputs = {
         'anthropic-api-key': 'test-api-key',
@@ -97,9 +101,10 @@ describe('Main Orchestrator', () => {
 
   afterEach(() => {
     delete process.env.GITHUB_WORKSPACE;
+    delete process.env.GITHUB_REPOSITORY;
   });
 
-  test('runs full pipeline without error', async () => {
+  test('runs full PASTA pipeline without error', async () => {
     const { run } = require('../src/index');
     await run();
     expect(mockCore.setFailed).not.toHaveBeenCalled();
@@ -114,15 +119,15 @@ describe('Main Orchestrator', () => {
     expect(mockCore.setOutput).toHaveBeenCalledWith('report-path', expect.any(String));
   });
 
-  test('writes job summary', async () => {
+  test('writes PASTA job summary', async () => {
     const { run } = require('../src/index');
     await run();
-    expect(mockCore.summary.addHeading).toHaveBeenCalled();
+    expect(mockCore.summary.addHeading).toHaveBeenCalledWith('PASTA Threat Model Generated');
     expect(mockCore.summary.addTable).toHaveBeenCalled();
     expect(mockCore.summary.write).toHaveBeenCalled();
   });
 
-  test('fails build when fail-on-high-risk is true and high risks exist', async () => {
+  test('fails build when fail-on-high-risk is true and critical vulns exist', async () => {
     mockCore.getInput.mockImplementation((name) => {
       const inputs = {
         'anthropic-api-key': 'test-api-key',
@@ -141,21 +146,24 @@ describe('Main Orchestrator', () => {
         messages: {
           create: jest.fn().mockImplementation(({ system }) => {
             if (system.includes('data flow')) {
-              return Promise.resolve({ content: [{ type: 'text', text: JSON.stringify({ flows: [] }) }] });
+              return Promise.resolve({ content: [{ type: 'text', text: JSON.stringify({ flows: [] }) }], stop_reason: 'end_turn' });
             }
-            if (system.includes('threat model') || system.includes('STRIDE')) {
+            if (system.includes('PASTA')) {
               return Promise.resolve({ content: [{ type: 'text', text: JSON.stringify({
-                components: [],
-                summary: { total_threats: 3, by_category: {}, by_risk: { high: 2 }, unmitigated_high_risk: 2 }
-              }) }] });
+                business_objectives: [],
+                overall_risk_status: 'CRITICAL',
+                attack_surfaces: [],
+                attack_scenarios: [],
+                summary: { total_vulnerabilities: 3, critical: 2, high: 1, medium: 0, low: 0, attack_scenarios: 1, attack_surfaces: 1 }
+              }) }], stop_reason: 'end_turn' });
             }
-            if (system.includes('compliance') || system.includes('auditor')) {
+            if (system.includes('Stage 7') || system.includes('risk analyst')) {
               return Promise.resolve({ content: [{ type: 'text', text: JSON.stringify({
-                framework: 'SOC2', version: '2017', controls: [],
+                framework: 'SOC2', version: '2017', risk_analysis: [], controls: [], tactical_recommendations: [],
                 summary: { total_controls: 0, compliant: 0, partial: 0, non_compliant: 0, overall_score: 0 }
-              }) }] });
+              }) }], stop_reason: 'end_turn' });
             }
-            return Promise.resolve({ content: [{ type: 'text', text: '{}' }] });
+            return Promise.resolve({ content: [{ type: 'text', text: '{}' }], stop_reason: 'end_turn' });
           })
         }
       }));
@@ -163,6 +171,6 @@ describe('Main Orchestrator', () => {
 
     const { run: runFresh } = require('../src/index');
     await runFresh();
-    expect(mockCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('unmitigated high-risk'));
+    expect(mockCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('critical-risk'));
   });
 });

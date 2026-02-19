@@ -43928,15 +43928,27 @@ class ComplianceAgent {
   async assess(threatModel) {
     const framework = this._loadFramework();
 
-    const systemPrompt = `You are a compliance auditor assessing a system's security controls against the ${this.frameworkName} framework. Evaluate each control requirement, determine compliance status based on the threat model and detected mitigations.
+    const systemPrompt = `You are a security risk analyst performing PASTA Stage 7 (Risk & Impact Analysis) and compliance assessment against the ${this.frameworkName} framework.
 
-IMPORTANT: Keep evidence and recommendations concise (1 sentence each). Limit gaps to the most critical items only.
+Given the PASTA threat analysis (business objectives, attack surfaces, attack scenarios), produce a risk-centric impact assessment and compliance mapping.
+
+IMPORTANT: Be concise. Keep descriptions to 1 sentence. Focus on actionable output.
 
 Output ONLY valid JSON matching this schema:
 {
   "framework": "${this.frameworkName}",
   "version": "Framework version string",
   "assessment_date": "${new Date().toISOString().split('T')[0]}",
+  "risk_analysis": [
+    {
+      "risk_id": "SHORT-ID",
+      "title": "Short risk title",
+      "pasta_level": "Critical|High|Medium|Low",
+      "business_impact": "Brief impact statement",
+      "mitigation_complexity": "Low|Medium|High",
+      "linked_vulnerabilities": ["VULN-IDs from threat model"]
+    }
+  ],
   "controls": [
     {
       "control_id": "Control identifier",
@@ -43945,7 +43957,14 @@ Output ONLY valid JSON matching this schema:
       "coverage": 0,
       "evidence": ["Brief evidence"],
       "gaps": ["Brief gap if any"],
-      "recommendations": ["Brief recommendation if gaps exist"]
+      "recommendations": ["Brief recommendation"]
+    }
+  ],
+  "tactical_recommendations": [
+    {
+      "priority": "Immediate|Short-term|Medium-term",
+      "action": "Specific actionable recommendation",
+      "addresses": ["RISK-IDs this fixes"]
     }
   ],
   "summary": {
@@ -43958,7 +43977,10 @@ Output ONLY valid JSON matching this schema:
 }
 
 Calculate overall_score as percentage: (compliant * 100 + partial * 50) / total_controls.
-Be specific about evidence from the threat model and actionable in recommendations.`;
+
+For risk_analysis: Map each attack surface/scenario to business risk with PASTA severity levels. Focus on business impact, not just technical severity.
+
+For tactical_recommendations: Provide specific, actionable steps ordered by priority. Reference which risks each recommendation addresses.`;
 
     try {
       const params = {
@@ -43967,9 +43989,9 @@ Be specific about evidence from the threat model and actionable in recommendatio
         system: systemPrompt,
         messages: [{
           role: 'user',
-          content: `Assess compliance for this system:
+          content: `Perform PASTA Stage 7 risk analysis and ${this.frameworkName} compliance assessment:
 
-Threat Model:
+PASTA Threat Analysis:
 ${JSON.stringify(threatModel, null, 2)}
 
 ${framework ? `Framework Definition:\n${JSON.stringify(framework, null, 2)}` : `Framework: ${this.frameworkName} (definition not available, use standard knowledge)`}`
@@ -43982,7 +44004,9 @@ ${framework ? `Framework Definition:\n${JSON.stringify(framework, null, 2)}` : `
       console.error('Compliance assessment failed:', error.message);
       return {
         framework: this.frameworkName,
+        risk_analysis: [],
         controls: [],
+        tactical_recommendations: [],
         summary: {
           total_controls: 0,
           compliant: 0,
@@ -44153,15 +44177,22 @@ class ReporterAgent {
       return icons[status] || '❓';
     });
 
+    Handlebars.registerHelper('severityIcon', (level) => {
+      const icons = { Critical: '🔴', High: '🟠', Medium: '🟡', Low: '🟢', CRITICAL: '🔴', HIGH: '🟠', MEDIUM: '🟡', LOW: '🟢' };
+      return icons[level] || '⚪';
+    });
+
+    Handlebars.registerHelper('riskStatusIcon', (status) => {
+      const icons = { CRITICAL: '🔴', HIGH: '🟠', MEDIUM: '🟡', LOW: '🟢' };
+      return icons[status] || '⚪';
+    });
+
     Handlebars.registerHelper('add', (a, b) => a + b);
   }
 
-  async generate({ threatModel, dataFlows, complianceResults, formats, outputDir }) {
+  async generate({ threatModel, dataFlows, complianceResults, formats, outputDir, projectName }) {
     await fs.mkdir(outputDir, { recursive: true });
     const outputs = {};
-
-    // Generate recommendations from threat model
-    const recommendations = this._generateRecommendations(threatModel, complianceResults);
 
     if (formats.includes('markdown')) {
       const templateSrc = await fs.readFile(path.join(this.templateDir, 'threat-model.md.hbs'), 'utf-8');
@@ -44170,7 +44201,7 @@ class ReporterAgent {
         threatModel,
         dataFlows,
         complianceResults,
-        recommendations,
+        projectName: projectName || 'Unknown Project',
         generatedDate: new Date().toISOString().split('T')[0],
       });
       const mdPath = path.join(outputDir, 'THREAT_MODEL.md');
@@ -44182,44 +44213,15 @@ class ReporterAgent {
       const jsonPath = path.join(outputDir, 'threat-model.json');
       await fs.writeFile(jsonPath, JSON.stringify({
         generated: new Date().toISOString(),
+        projectName: projectName || 'Unknown Project',
         threatModel,
         dataFlows,
         complianceResults,
-        recommendations,
       }, null, 2));
       outputs.json = jsonPath;
     }
 
     return outputs;
-  }
-
-  _generateRecommendations(threatModel, complianceResults) {
-    const recommendations = [];
-    // Extract unmitigated threats as recommendations
-    // Group by priority (critical/high/medium)
-    const critical = [];
-    const high = [];
-    const medium = [];
-
-    if (threatModel?.components) {
-      for (const comp of threatModel.components) {
-        for (const threat of comp.threats || []) {
-          const unmitigated = (threat.mitigations || []).filter(m => m.status === 'missing');
-          if (unmitigated.length > 0) {
-            const item = { title: threat.title, description: unmitigated.map(m => m.recommendation || m.control).join('; ') };
-            if (threat.risk_score >= 9) critical.push(item);
-            else if (threat.risk_score >= 7) high.push(item);
-            else medium.push(item);
-          }
-        }
-      }
-    }
-
-    if (critical.length) recommendations.push({ priority: 'Critical', items: critical });
-    if (high.length) recommendations.push({ priority: 'High', items: high });
-    if (medium.length) recommendations.push({ priority: 'Medium', items: medium });
-
-    return recommendations;
   }
 }
 
@@ -44302,7 +44304,7 @@ class ThreatGeneratorAgent {
         patterns[name] = JSON.parse(fs.readFileSync(__nccwpck_require__.ab + "patterns/" + file, 'utf8'));
       }
     } catch (error) {
-      console.error('Failed to load STRIDE patterns:', error.message);
+      console.error('Failed to load attack patterns:', error.message);
     }
     return patterns;
   }
@@ -44310,49 +44312,65 @@ class ThreatGeneratorAgent {
   async generate(context) {
     const patterns = this._loadPatterns();
 
-    const systemPrompt = `You are a senior security engineer performing STRIDE threat modeling. Analyze each component in the system and identify threats using the STRIDE framework (Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege).
+    const systemPrompt = `You are a senior security engineer performing a PASTA (Process for Attack Simulation and Threat Analysis) assessment. Analyze the system and produce a risk-centric threat model covering PASTA Stages 1-2 and 4-6.
 
-Use the provided STRIDE patterns as reference but also identify threats specific to this codebase.
-
-IMPORTANT: Keep descriptions concise (1-2 sentences max). Limit to the 3-4 most critical threats per component. Keep CVSS vectors short.
+IMPORTANT: Be concise. 1-2 sentences per description. Focus on the most critical and realistic threats.
 
 Output ONLY valid JSON matching this schema:
 {
-  "components": [
+  "business_objectives": [
     {
-      "name": "Component Name",
-      "type": "process|data_store|data_flow|external_entity",
-      "threats": [
+      "objective": "e.g. Data Integrity, Availability, Compliance, Confidentiality",
+      "impact_of_breach": "High|Medium|Low",
+      "description": "Brief business impact statement",
+      "tech_context": "Relevant tech from the stack"
+    }
+  ],
+  "overall_risk_status": "CRITICAL|HIGH|MEDIUM|LOW",
+  "attack_surfaces": [
+    {
+      "name": "e.g. Primary Attack Surface",
+      "vector": "e.g. Public API Endpoint",
+      "weakness": "Brief description of the architectural weakness",
+      "vulnerabilities": [
         {
           "id": "COMPONENT-CATEGORY-NNN",
-          "category": "Spoofing|Tampering|Repudiation|Information Disclosure|Denial of Service|Elevation of Privilege",
-          "title": "Short threat title",
-          "description": "Brief threat description",
-          "likelihood": "Low|Medium|High|Critical",
-          "impact": "Low|Medium|High|Critical",
-          "risk_score": 0.0,
-          "cvss_vector": "CVSS:3.1/AV:N/AC:L/...",
-          "mitigations": [
-            {
-              "control": "Control name",
-              "status": "implemented|partial|missing",
-              "evidence": "Brief evidence"
-            }
-          ],
-          "residual_risk": "Low|Medium|High|Critical"
+          "title": "Short title",
+          "description": "Brief description",
+          "severity": "Critical|High|Medium|Low"
+        }
+      ]
+    }
+  ],
+  "attack_scenarios": [
+    {
+      "name": "Scenario title describing the end goal",
+      "objective": "What the attacker achieves",
+      "steps": [
+        {
+          "phase": "Reconnaissance|Exploitation|Lateral Movement|Persistence|Exfiltration",
+          "action": "What the attacker does",
+          "exploits": ["VULN-ID-referenced-above"]
         }
       ]
     }
   ],
   "summary": {
-    "total_threats": 0,
-    "by_category": { "Spoofing": 0, "Tampering": 0, "Repudiation": 0, "Information Disclosure": 0, "Denial of Service": 0, "Elevation of Privilege": 0 },
-    "by_risk": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
-    "unmitigated_high_risk": 0
+    "total_vulnerabilities": 0,
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "attack_scenarios": 0,
+    "attack_surfaces": 0
   }
 }
 
-Calculate risk_score using likelihood x impact (1-10 scale). Count unmitigated_high_risk as threats with risk_score >= 7 and no implemented mitigations.`;
+For business_objectives: Analyze the tech stack and identify what the business is protecting and why it matters.
+
+For attack_surfaces: Group vulnerabilities by attack vector (public API, input validation, data storage, external integrations, etc.). Each surface should have a clear vector, weakness, and specific vulnerabilities.
+
+For attack_scenarios: Model realistic multi-step attack kill chains showing how an attacker would combine vulnerabilities. Show the progression from reconnaissance through exploitation to impact. Reference vulnerability IDs from attack_surfaces.`;
 
     try {
       const params = {
@@ -44361,12 +44379,12 @@ Calculate risk_score using likelihood x impact (1-10 scale). Count unmitigated_h
         system: systemPrompt,
         messages: [{
           role: 'user',
-          content: `Perform STRIDE threat modeling for this system:
+          content: `Perform PASTA threat analysis for this system:
 
 System Context:
 ${JSON.stringify(context, null, 2)}
 
-STRIDE Reference Patterns:
+Attack Pattern Reference:
 ${JSON.stringify(patterns, null, 2)}`
         }],
       };
@@ -44376,12 +44394,18 @@ ${JSON.stringify(patterns, null, 2)}`
     } catch (error) {
       console.error('Threat generation failed:', error.message);
       return {
-        components: [],
+        business_objectives: [],
+        overall_risk_status: 'UNKNOWN',
+        attack_surfaces: [],
+        attack_scenarios: [],
         summary: {
-          total_threats: 0,
-          by_category: {},
-          by_risk: {},
-          unmitigated_high_risk: 0
+          total_vulnerabilities: 0,
+          critical: 0,
+          high: 0,
+          medium: 0,
+          low: 0,
+          attack_scenarios: 0,
+          attack_surfaces: 0
         }
       };
     }
@@ -44415,6 +44439,9 @@ async function run() {
     const outputFormats = core.getInput('output-formats').split(',').map(s => s.trim()).filter(Boolean);
     const failOnHighRisk = core.getInput('fail-on-high-risk') === 'true';
 
+    // Derive project name from repo
+    const repoName = process.env.GITHUB_REPOSITORY || path.basename(repoPath);
+
     // Step 1: Parallel discovery
     core.startGroup('Analyzing repository...');
     const [techStack, infrastructure] = await Promise.all([
@@ -44424,22 +44451,22 @@ async function run() {
     const apiSurface = await new APISurfaceAgent().analyze(repoPath, techStack);
     core.endGroup();
 
-    // Step 2: Data flow analysis
+    // Step 2: Data flow analysis (PASTA Stage 3)
     core.startGroup('Mapping data flows...');
     const dataFlows = await new DataFlowAgent(apiKey).analyze({
       techStack, infrastructure, apiSurface,
     });
     core.endGroup();
 
-    // Step 3: Threat generation
-    core.startGroup('Generating threat model...');
+    // Step 3: PASTA threat analysis (Stages 1-2, 4-6)
+    core.startGroup('Generating PASTA threat analysis...');
     const threatModel = await new ThreatGeneratorAgent(apiKey).generate({
       techStack, infrastructure, apiSurface, dataFlows,
     });
     core.endGroup();
 
-    // Step 4: Compliance mapping
-    core.startGroup('Assessing compliance...');
+    // Step 4: Risk & compliance assessment (PASTA Stage 7)
+    core.startGroup('Assessing risk & compliance...');
     const complianceResults = [];
     for (const fw of frameworks) {
       const result = await new ComplianceAgent(apiKey, fw).assess(threatModel);
@@ -44456,33 +44483,37 @@ async function run() {
       complianceResults,
       formats: outputFormats,
       outputDir,
+      projectName: repoName,
     });
     core.endGroup();
 
     // Step 6: Set outputs
-    const totalThreats = threatModel.summary?.total_threats || 0;
-    const highRiskCount = threatModel.summary?.unmitigated_high_risk || 0;
+    const totalVulns = threatModel.summary?.total_vulnerabilities || 0;
+    const criticalCount = threatModel.summary?.critical || 0;
     const complianceScore = complianceResults[0]?.summary?.overall_score || 0;
+    const riskStatus = threatModel.overall_risk_status || 'UNKNOWN';
 
-    core.setOutput('threats-found', totalThreats);
-    core.setOutput('high-risk-count', highRiskCount);
+    core.setOutput('threats-found', totalVulns);
+    core.setOutput('high-risk-count', criticalCount);
     core.setOutput('compliance-score', complianceScore);
     core.setOutput('report-path', outputDir);
 
     // Step 7: Job summary
     await core.summary
-      .addHeading('Threat Model Generated')
+      .addHeading('PASTA Threat Model Generated')
       .addTable([
         [{ data: 'Metric', header: true }, { data: 'Value', header: true }],
-        ['Total Threats', String(totalThreats)],
-        ['High Risk (Unmitigated)', String(highRiskCount)],
+        ['Risk Status', riskStatus],
+        ['Total Vulnerabilities', String(totalVulns)],
+        ['Critical', String(criticalCount)],
+        ['Attack Scenarios', String(threatModel.summary?.attack_scenarios || 0)],
         ['Compliance Score', `${complianceScore}%`],
       ])
       .write();
 
     // Step 8: Fail if needed
-    if (failOnHighRisk && highRiskCount > 0) {
-      core.setFailed(`Found ${highRiskCount} unmitigated high-risk threats`);
+    if (failOnHighRisk && criticalCount > 0) {
+      core.setFailed(`Found ${criticalCount} critical-risk vulnerabilities`);
     }
 
   } catch (error) {

@@ -9,26 +9,37 @@ describe('ReporterAgent', () => {
 
   const sampleData = {
     threatModel: {
-      components: [{
-        name: 'Express API',
-        type: 'process',
-        threats: [{
+      business_objectives: [{
+        objective: 'Data Integrity',
+        impact_of_breach: 'High',
+        description: 'No persistence layer',
+        tech_context: 'Node.js, Express'
+      }],
+      overall_risk_status: 'HIGH',
+      attack_surfaces: [{
+        name: 'Public API',
+        vector: 'HTTP Endpoint',
+        weakness: 'No authentication',
+        vulnerabilities: [{
           id: 'API-001',
-          category: 'Spoofing',
-          title: 'JWT forgery',
-          description: 'Attacker forges JWT',
-          likelihood: 'Medium',
-          impact: 'High',
-          risk_score: 7.5,
-          residual_risk: 'Low',
-          mitigations: [{ control: 'RS256', status: 'implemented', evidence: 'Found in auth.js' }]
+          title: 'Unrestricted access',
+          description: 'No auth on endpoints',
+          severity: 'Critical'
         }]
       }],
+      attack_scenarios: [{
+        name: 'Data Exfiltration',
+        objective: 'Extract user data',
+        steps: [
+          { phase: 'Reconnaissance', action: 'Probe API', exploits: [] },
+          { phase: 'Exploitation', action: 'Access endpoints', exploits: ['API-001'] }
+        ]
+      }],
       summary: {
-        total_threats: 1,
-        by_category: { Spoofing: 1, Tampering: 0, Repudiation: 0, 'Information Disclosure': 0, 'Denial of Service': 0, 'Elevation of Privilege': 0 },
-        by_risk: { critical: 0, high: 0, medium: 1, low: 0 },
-        unmitigated_high_risk: 0
+        total_vulnerabilities: 1,
+        critical: 1, high: 0, medium: 0, low: 0,
+        attack_scenarios: 1,
+        attack_surfaces: 1
       }
     },
     dataFlows: {
@@ -47,6 +58,14 @@ describe('ReporterAgent', () => {
       framework: 'SOC2',
       version: '2017',
       assessment_date: '2026-02-17',
+      risk_analysis: [{
+        risk_id: 'AUTH-001',
+        title: 'Auth Bypass',
+        pasta_level: 'Critical',
+        business_impact: 'Full breach',
+        mitigation_complexity: 'Medium',
+        linked_vulnerabilities: ['API-001']
+      }],
       controls: [{
         control_id: 'CC6.1',
         description: 'Access controls',
@@ -56,8 +75,12 @@ describe('ReporterAgent', () => {
         gaps: [],
         recommendations: []
       }],
+      tactical_recommendations: [
+        { priority: 'Immediate', action: 'Add authentication', addresses: ['AUTH-001'] }
+      ],
       summary: { total_controls: 1, compliant: 1, partial: 0, non_compliant: 0, overall_score: 100 }
-    }]
+    }],
+    projectName: 'test-project'
   };
 
   beforeEach(async () => {
@@ -69,7 +92,7 @@ describe('ReporterAgent', () => {
     await fs.rm(outputDir, { recursive: true, force: true });
   });
 
-  test('generates THREAT_MODEL.md from template', async () => {
+  test('generates PASTA THREAT_MODEL.md', async () => {
     const result = await agent.generate({
       ...sampleData,
       formats: ['markdown'],
@@ -77,8 +100,8 @@ describe('ReporterAgent', () => {
     });
     expect(result.markdown).toBeDefined();
     const content = await fs.readFile(result.markdown, 'utf-8');
-    expect(content).toContain('Threat Model Report');
-    expect(content).toContain('Executive Summary');
+    expect(content).toContain('PASTA Threat Model Report');
+    expect(content).toContain('Business Objectives');
   });
 
   test('generates threat-model.json', async () => {
@@ -90,7 +113,7 @@ describe('ReporterAgent', () => {
     expect(result.json).toBeDefined();
     const content = JSON.parse(await fs.readFile(result.json, 'utf-8'));
     expect(content.threatModel).toBeDefined();
-    expect(content.generated).toBeDefined();
+    expect(content.projectName).toBe('test-project');
   });
 
   test('creates output directory if missing', async () => {
@@ -104,27 +127,29 @@ describe('ReporterAgent', () => {
     expect(exists).toBe(true);
   });
 
-  test('markdown contains threat analysis section', async () => {
+  test('markdown contains attack surfaces and scenarios', async () => {
     const result = await agent.generate({
       ...sampleData,
       formats: ['markdown'],
       outputDir,
     });
     const content = await fs.readFile(result.markdown, 'utf-8');
-    expect(content).toContain('Threat Analysis');
-    expect(content).toContain('JWT forgery');
+    expect(content).toContain('Threat & Vulnerability Analysis');
     expect(content).toContain('API-001');
+    expect(content).toContain('Attack Modeling');
+    expect(content).toContain('Data Exfiltration');
   });
 
-  test('markdown contains compliance section', async () => {
+  test('markdown contains risk analysis and compliance', async () => {
     const result = await agent.generate({
       ...sampleData,
       formats: ['markdown'],
       outputDir,
     });
     const content = await fs.readFile(result.markdown, 'utf-8');
-    expect(content).toContain('Compliance Assessment');
+    expect(content).toContain('Risk & Impact Analysis');
     expect(content).toContain('SOC2');
-    expect(content).toContain('CC6.1');
+    expect(content).toContain('Tactical Recommendations');
+    expect(content).toContain('AUTH-001');
   });
 });

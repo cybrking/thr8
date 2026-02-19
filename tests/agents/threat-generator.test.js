@@ -1,27 +1,41 @@
 const path = require('path');
 const ThreatGeneratorAgent = require('../../src/agents/threat-generator');
 
-const mockThreatModel = {
-  components: [{
-    name: 'Express API Server',
-    type: 'process',
-    threats: [{
+const mockPastaModel = {
+  business_objectives: [{
+    objective: 'Data Integrity',
+    impact_of_breach: 'High',
+    description: 'No database persistence',
+    tech_context: 'Node.js, Express'
+  }],
+  overall_risk_status: 'HIGH',
+  attack_surfaces: [{
+    name: 'Primary Attack Surface',
+    vector: 'Public API Endpoint',
+    weakness: 'No authentication middleware',
+    vulnerabilities: [{
       id: 'API-SPOOF-001',
-      category: 'Spoofing',
-      title: 'JWT token forgery',
-      description: 'Attacker creates fake JWT to impersonate users',
-      likelihood: 'Medium',
-      impact: 'High',
-      risk_score: 7.5,
-      mitigations: [{ control: 'RS256 JWT signing', status: 'implemented', evidence: 'jsonwebtoken with RS256' }],
-      residual_risk: 'Low'
+      title: 'Unrestricted API access',
+      description: 'No auth on business logic endpoints',
+      severity: 'Critical'
     }]
   }],
+  attack_scenarios: [{
+    name: 'Full Data Exfiltration',
+    objective: 'Extract all user data',
+    steps: [
+      { phase: 'Reconnaissance', action: 'Probe API endpoints', exploits: [] },
+      { phase: 'Exploitation', action: 'Access unprotected endpoints', exploits: ['API-SPOOF-001'] }
+    ]
+  }],
   summary: {
-    total_threats: 12,
-    by_category: { Spoofing: 2, Tampering: 3, Repudiation: 1, 'Information Disclosure': 3, 'Denial of Service': 2, 'Elevation of Privilege': 1 },
-    by_risk: { critical: 1, high: 3, medium: 5, low: 3 },
-    unmitigated_high_risk: 2
+    total_vulnerabilities: 5,
+    critical: 1,
+    high: 2,
+    medium: 1,
+    low: 1,
+    attack_scenarios: 1,
+    attack_surfaces: 1
   }
 };
 
@@ -29,14 +43,15 @@ jest.mock('@anthropic-ai/sdk', () => {
   return jest.fn().mockImplementation(() => ({
     messages: {
       create: jest.fn().mockResolvedValue({
-        content: [{ type: 'text', text: JSON.stringify(mockThreatModel) }]
+        content: [{ type: 'text', text: JSON.stringify(mockPastaModel) }],
+        stop_reason: 'end_turn'
       })
     }
   }));
 });
 
 describe('ThreatGeneratorAgent', () => {
-  test('returns structured threat model with summary', async () => {
+  test('returns PASTA threat model with attack surfaces and scenarios', async () => {
     const agent = new ThreatGeneratorAgent('test-key');
     const result = await agent.generate({
       techStack: { framework: { name: 'Express' } },
@@ -44,11 +59,12 @@ describe('ThreatGeneratorAgent', () => {
       apiSurface: { endpoints: [] },
       dataFlows: { flows: [] },
     });
-    expect(result.components).toBeDefined();
-    expect(result.summary).toBeDefined();
-    expect(result.summary.total_threats).toBe(12);
-    expect(result.summary.by_category).toBeDefined();
-    expect(result.summary.unmitigated_high_risk).toBe(2);
+    expect(result.business_objectives).toBeDefined();
+    expect(result.overall_risk_status).toBe('HIGH');
+    expect(result.attack_surfaces).toBeDefined();
+    expect(result.attack_surfaces[0].vulnerabilities.length).toBeGreaterThan(0);
+    expect(result.attack_scenarios).toBeDefined();
+    expect(result.summary.total_vulnerabilities).toBe(5);
   });
 
   test('falls back to empty on error', async () => {
@@ -60,7 +76,8 @@ describe('ThreatGeneratorAgent', () => {
     const result = await agent.generate({
       techStack: {}, infrastructure: {}, apiSurface: { endpoints: [] }, dataFlows: { flows: [] }
     });
-    expect(result.components).toEqual([]);
-    expect(result.summary.total_threats).toBe(0);
+    expect(result.attack_surfaces).toEqual([]);
+    expect(result.attack_scenarios).toEqual([]);
+    expect(result.summary.total_vulnerabilities).toBe(0);
   });
 });
