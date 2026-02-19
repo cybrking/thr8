@@ -1,6 +1,6 @@
 # PASTA Threat Model Report: cybrking/test-project
 
-**Date**: 2026-02-19 | **Status**: 🟠 HIGH RISK
+**Date**: 2026-02-19 | **Status**: 🟡 MEDIUM RISK
 
 ---
 
@@ -10,7 +10,7 @@
 
 | Objective | Impact of Breach | Tech Context |
 |-----------|-----------------|--------------|
-| **Data Integrity** | High — Test | Node.js |
+| **Availability** | High — Test | Node.js |
 
 ---
 
@@ -25,7 +25,7 @@ graph LR
 
 ### Test Flow
 
-**Data Classification**: PII
+**Data Classification**: Internal
 
 | Step | Component | Type | Protocol | Data |
 |------|-----------|------|----------|------|
@@ -47,8 +47,8 @@ graph LR
 
 | | |
 |---|---|
-| **Vulnerability** | `[V-001]` — Test vuln |
-| **Severity** | 🔴 **Critical** |
+| **Vulnerability** | `[V-001]` — Test |
+| **Severity** | 🟡 **Medium** |
 | **Description** | Test |
 
 
@@ -58,11 +58,11 @@ graph LR
 
 *How an attacker would realistically exploit these gaps.*
 
-### Scenario: Test Attack
+### Scenario: Test
 
-**Objective**: Breach
+**Objective**: Test
 
-1. **Exploitation**: Access API *(exploits: `V-001`)*
+1. **Exploitation**: Test *(exploits: `V-001`)*
 
 
 ---
@@ -73,7 +73,7 @@ graph LR
 
 | Risk ID | PASTA Level | Business Impact | Mitigation Complexity |
 |---------|-------------|-----------------|----------------------|
-| **R-001** | 🔴 **Critical** | High | Medium |
+| **R-001** | 🟡 **Medium** | Test | Low |
 
 ---
 

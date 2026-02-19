@@ -1,24 +1,91 @@
 {
-  "generated": "2026-02-19T00:45:20.758Z",
+  "generated": "2026-02-19T05:04:40.617Z",
   "projectName": "cybrking/test-project",
   "threatModel": {
-    "business_objectives": [],
-    "overall_risk_status": "CRITICAL",
-    "attack_surfaces": [],
-    "attack_scenarios": [],
-    "risk_analysis": [],
-    "tactical_recommendations": [],
+    "business_objectives": [
+      {
+        "objective": "Availability",
+        "impact_of_breach": "High",
+        "description": "Test",
+        "tech_context": "Node.js"
+      }
+    ],
+    "overall_risk_status": "MEDIUM",
+    "attack_surfaces": [
+      {
+        "name": "API",
+        "vector": "HTTP",
+        "weakness": "No auth",
+        "vulnerabilities": [
+          {
+            "id": "V-001",
+            "title": "Test",
+            "description": "Test",
+            "severity": "Medium"
+          }
+        ]
+      }
+    ],
+    "attack_scenarios": [
+      {
+        "name": "Test",
+        "objective": "Test",
+        "steps": [
+          {
+            "phase": "Exploitation",
+            "action": "Test",
+            "exploits": [
+              "V-001"
+            ]
+          }
+        ]
+      }
+    ],
+    "risk_analysis": [
+      {
+        "risk_id": "R-001",
+        "title": "Test",
+        "pasta_level": "Medium",
+        "business_impact": "Test",
+        "mitigation_complexity": "Low",
+        "linked_vulnerabilities": [
+          "V-001"
+        ]
+      }
+    ],
+    "tactical_recommendations": [
+      {
+        "priority": "Immediate",
+        "action": "Fix auth",
+        "addresses": [
+          "R-001"
+        ]
+      }
+    ],
     "summary": {
-      "total_vulnerabilities": 3,
-      "critical": 2,
-      "high": 1,
-      "medium": 0,
+      "total_vulnerabilities": 1,
+      "critical": 0,
+      "high": 0,
+      "medium": 1,
       "low": 0,
       "attack_scenarios": 1,
       "attack_surfaces": 1
     }
   },
   "dataFlows": {
-    "flows": []
+    "flows": [
+      {
+        "id": "test_flow",
+        "name": "Test Flow",
+        "steps": [
+          {
+            "component": "API",
+            "type": "application"
+          }
+        ],
+        "data_classification": "Internal",
+        "trust_boundaries": []
+      }
+    ]
   }
 }

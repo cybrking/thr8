@@ -1,10 +1,7 @@
 const core = require('@actions/core');
 const path = require('path');
 
-const TechStackAgent = require('./agents/tech-stack');
-const InfrastructureAgent = require('./agents/infrastructure');
-const APISurfaceAgent = require('./agents/api-surface');
-const DataFlowAgent = require('./agents/data-flow');
+const CodebaseScannerAgent = require('./agents/codebase-scanner');
 const ThreatGeneratorAgent = require('./agents/threat-generator');
 const ReporterAgent = require('./agents/reporter');
 
@@ -18,30 +15,20 @@ async function run() {
     // Derive project name from repo
     const repoName = process.env.GITHUB_REPOSITORY || path.basename(repoPath);
 
-    // Step 1: Parallel discovery
-    core.startGroup('Analyzing repository...');
-    const [techStack, infrastructure] = await Promise.all([
-      new TechStackAgent().analyze(repoPath),
-      new InfrastructureAgent().analyze(repoPath),
-    ]);
-    const apiSurface = await new APISurfaceAgent().analyze(repoPath, techStack);
+    // Step 1: Scan codebase + map data flows (PASTA Stage 3)
+    core.startGroup('Scanning codebase...');
+    const { systemContext, dataFlows, filesScanned } = await new CodebaseScannerAgent(apiKey).analyze(repoPath);
+    core.info(`Scanned ${filesScanned} files`);
     core.endGroup();
 
-    // Step 2: Data flow analysis (PASTA Stage 3)
-    core.startGroup('Mapping data flows...');
-    const dataFlows = await new DataFlowAgent(apiKey).analyze({
-      techStack, infrastructure, apiSurface,
-    });
-    core.endGroup();
-
-    // Step 3: PASTA threat analysis (Stages 1-2, 4-7)
+    // Step 2: PASTA threat analysis (Stages 1-2, 4-7)
     core.startGroup('Generating PASTA threat analysis...');
     const threatModel = await new ThreatGeneratorAgent(apiKey).generate({
-      techStack, infrastructure, apiSurface, dataFlows,
+      systemContext, dataFlows,
     });
     core.endGroup();
 
-    // Step 4: Generate reports
+    // Step 3: Generate reports
     core.startGroup('Generating reports...');
     const outputDir = path.join(repoPath, 'threat-model');
     await new ReporterAgent().generate({
@@ -53,7 +40,7 @@ async function run() {
     });
     core.endGroup();
 
-    // Step 5: Set outputs
+    // Step 4: Set outputs
     const totalVulns = threatModel.summary?.total_vulnerabilities || 0;
     const criticalCount = threatModel.summary?.critical || 0;
     const riskStatus = threatModel.overall_risk_status || 'UNKNOWN';
@@ -62,19 +49,20 @@ async function run() {
     core.setOutput('high-risk-count', criticalCount);
     core.setOutput('report-path', outputDir);
 
-    // Step 6: Job summary
+    // Step 5: Job summary
     await core.summary
       .addHeading('PASTA Threat Model Generated')
       .addTable([
         [{ data: 'Metric', header: true }, { data: 'Value', header: true }],
         ['Risk Status', riskStatus],
+        ['Files Scanned', String(filesScanned)],
         ['Total Vulnerabilities', String(totalVulns)],
         ['Critical', String(criticalCount)],
         ['Attack Scenarios', String(threatModel.summary?.attack_scenarios || 0)],
       ])
       .write();
 
-    // Step 7: Fail if needed
+    // Step 6: Fail if needed
     if (failOnHighRisk && criticalCount > 0) {
       core.setFailed(`Found ${criticalCount} critical-risk vulnerabilities`);
     }
@@ -86,7 +74,6 @@ async function run() {
 
 module.exports = { run };
 
-// Auto-run when executed directly (not when required in tests)
 if (require.main === module) {
   run();
 }

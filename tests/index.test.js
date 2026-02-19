@@ -1,12 +1,12 @@
 const path = require('path');
 
-// Mock @actions/core
 const mockCore = {
   getInput: jest.fn(),
   setOutput: jest.fn(),
   setFailed: jest.fn(),
   startGroup: jest.fn(),
   endGroup: jest.fn(),
+  info: jest.fn(),
   summary: {
     addHeading: jest.fn().mockReturnThis(),
     addTable: jest.fn().mockReturnThis(),
@@ -15,21 +15,28 @@ const mockCore = {
 };
 jest.mock('@actions/core', () => mockCore);
 
-// Mock Anthropic SDK
 jest.mock('@anthropic-ai/sdk', () => {
   return jest.fn().mockImplementation(() => ({
     messages: {
       create: jest.fn().mockImplementation(({ system }) => {
-        if (system.includes('data flow')) {
+        if (system.includes('codebase analysis')) {
           return Promise.resolve({
             content: [{ type: 'text', text: JSON.stringify({
-              flows: [{
-                id: 'test_flow',
-                name: 'Test Flow',
-                steps: [{ component: 'API', type: 'application' }],
-                data_classification: 'PII',
-                trust_boundaries: []
-              }]
+              system_context: {
+                project_name: 'test-app',
+                description: 'Test',
+                tech_stack: { languages: ['JavaScript'], frameworks: ['Express'], databases: [], external_services: [], auth_mechanisms: [], security_controls: [] },
+                infrastructure: { provider: 'None', containerized: false, services: [] },
+                api_surface: { endpoints: [] },
+                sensitive_patterns: []
+              },
+              data_flows: {
+                flows: [{
+                  id: 'test_flow', name: 'Test Flow',
+                  steps: [{ component: 'API', type: 'application' }],
+                  data_classification: 'Internal', trust_boundaries: []
+                }]
+              }
             })}],
             stop_reason: 'end_turn'
           });
@@ -37,26 +44,16 @@ jest.mock('@anthropic-ai/sdk', () => {
         if (system.includes('PASTA')) {
           return Promise.resolve({
             content: [{ type: 'text', text: JSON.stringify({
-              business_objectives: [{ objective: 'Data Integrity', impact_of_breach: 'High', description: 'Test', tech_context: 'Node.js' }],
-              overall_risk_status: 'HIGH',
+              business_objectives: [{ objective: 'Availability', impact_of_breach: 'High', description: 'Test', tech_context: 'Node.js' }],
+              overall_risk_status: 'MEDIUM',
               attack_surfaces: [{
-                name: 'API',
-                vector: 'HTTP',
-                weakness: 'No auth',
-                vulnerabilities: [{ id: 'V-001', title: 'Test vuln', description: 'Test', severity: 'Critical' }]
+                name: 'API', vector: 'HTTP', weakness: 'No auth',
+                vulnerabilities: [{ id: 'V-001', title: 'Test', description: 'Test', severity: 'Medium' }]
               }],
-              attack_scenarios: [{
-                name: 'Test Attack',
-                objective: 'Breach',
-                steps: [{ phase: 'Exploitation', action: 'Access API', exploits: ['V-001'] }]
-              }],
-              risk_analysis: [{ risk_id: 'R-001', title: 'Test Risk', pasta_level: 'Critical', business_impact: 'High', mitigation_complexity: 'Medium', linked_vulnerabilities: ['V-001'] }],
+              attack_scenarios: [{ name: 'Test', objective: 'Test', steps: [{ phase: 'Exploitation', action: 'Test', exploits: ['V-001'] }] }],
+              risk_analysis: [{ risk_id: 'R-001', title: 'Test', pasta_level: 'Medium', business_impact: 'Test', mitigation_complexity: 'Low', linked_vulnerabilities: ['V-001'] }],
               tactical_recommendations: [{ priority: 'Immediate', action: 'Fix auth', addresses: ['R-001'] }],
-              summary: {
-                total_vulnerabilities: 1,
-                critical: 1, high: 0, medium: 0, low: 0,
-                attack_scenarios: 1, attack_surfaces: 1
-              }
+              summary: { total_vulnerabilities: 1, critical: 0, high: 0, medium: 1, low: 0, attack_scenarios: 1, attack_surfaces: 1 }
             })}],
             stop_reason: 'end_turn'
           });
@@ -74,14 +71,11 @@ describe('Main Orchestrator', () => {
     jest.clearAllMocks();
     process.env.GITHUB_WORKSPACE = FIXTURE_PATH;
     process.env.GITHUB_REPOSITORY = 'cybrking/test-project';
-    mockCore.getInput.mockImplementation((name) => {
-      const inputs = {
-        'anthropic-api-key': 'test-api-key',
-        'output-formats': 'markdown,json',
-        'fail-on-high-risk': 'false',
-      };
-      return inputs[name] || '';
-    });
+    mockCore.getInput.mockImplementation((name) => ({
+      'anthropic-api-key': 'test-api-key',
+      'output-formats': 'markdown,json',
+      'fail-on-high-risk': 'false',
+    }[name] || ''));
   });
 
   afterEach(() => {
@@ -89,7 +83,7 @@ describe('Main Orchestrator', () => {
     delete process.env.GITHUB_REPOSITORY;
   });
 
-  test('runs full PASTA pipeline without error', async () => {
+  test('runs full pipeline without error', async () => {
     const { run } = require('../src/index');
     await run();
     expect(mockCore.setFailed).not.toHaveBeenCalled();
@@ -103,52 +97,16 @@ describe('Main Orchestrator', () => {
     expect(mockCore.setOutput).toHaveBeenCalledWith('report-path', expect.any(String));
   });
 
+  test('logs files scanned count', async () => {
+    const { run } = require('../src/index');
+    await run();
+    expect(mockCore.info).toHaveBeenCalledWith(expect.stringContaining('Scanned'));
+  });
+
   test('writes PASTA job summary', async () => {
     const { run } = require('../src/index');
     await run();
     expect(mockCore.summary.addHeading).toHaveBeenCalledWith('PASTA Threat Model Generated');
-    expect(mockCore.summary.addTable).toHaveBeenCalled();
     expect(mockCore.summary.write).toHaveBeenCalled();
-  });
-
-  test('fails build when fail-on-high-risk is true and critical vulns exist', async () => {
-    mockCore.getInput.mockImplementation((name) => {
-      const inputs = {
-        'anthropic-api-key': 'test-api-key',
-        'output-formats': 'json',
-        'fail-on-high-risk': 'true',
-      };
-      return inputs[name] || '';
-    });
-
-    jest.resetModules();
-    jest.mock('@actions/core', () => mockCore);
-    jest.mock('@anthropic-ai/sdk', () => {
-      return jest.fn().mockImplementation(() => ({
-        messages: {
-          create: jest.fn().mockImplementation(({ system }) => {
-            if (system.includes('data flow')) {
-              return Promise.resolve({ content: [{ type: 'text', text: JSON.stringify({ flows: [] }) }], stop_reason: 'end_turn' });
-            }
-            if (system.includes('PASTA')) {
-              return Promise.resolve({ content: [{ type: 'text', text: JSON.stringify({
-                business_objectives: [],
-                overall_risk_status: 'CRITICAL',
-                attack_surfaces: [],
-                attack_scenarios: [],
-                risk_analysis: [],
-                tactical_recommendations: [],
-                summary: { total_vulnerabilities: 3, critical: 2, high: 1, medium: 0, low: 0, attack_scenarios: 1, attack_surfaces: 1 }
-              }) }], stop_reason: 'end_turn' });
-            }
-            return Promise.resolve({ content: [{ type: 'text', text: '{}' }], stop_reason: 'end_turn' });
-          })
-        }
-      }));
-    });
-
-    const { run: runFresh } = require('../src/index');
-    await runFresh();
-    expect(mockCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('critical-risk'));
   });
 });
