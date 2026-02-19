@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PASTA Threat Model — {{projectName}}</title>
+<style>
+  :root {
+    --navy: #1a1f36;
+    --navy-light: #2d3352;
+    --indigo: #667eea;
+    --indigo-light: #7c93ed;
+    --bg: #f5f6fa;
+    --card: #ffffff;
+    --text: #2d3352;
+    --text-muted: #6b7294;
+    --border: #e2e5f1;
+    --critical: #e53e3e;
+    --critical-bg: #fff5f5;
+    --high: #dd6b20;
+    --high-bg: #fffaf0;
+    --medium: #d69e2e;
+    --medium-bg: #fffff0;
+    --low: #38a169;
+    --low-bg: #f0fff4;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* Sidebar Navigation */
+  .sidebar {
+    width: 260px;
+    background: var(--navy);
+    color: #fff;
+    padding: 2rem 0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    overflow-y: auto;
+    z-index: 100;
+  }
+
+  .sidebar-brand {
+    padding: 0 1.5rem 1.5rem;
+    border-bottom: 1px solid var(--navy-light);
+    margin-bottom: 1rem;
+  }
+
+  .sidebar-brand h2 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--indigo-light);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .sidebar-brand p {
+    font-size: 0.8rem;
+    color: #8892b0;
+    margin-top: 0.25rem;
+  }
+
+  .sidebar nav a {
+    display: block;
+    padding: 0.6rem 1.5rem;
+    color: #a0aac4;
+    text-decoration: none;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+    border-left: 3px solid transparent;
+  }
+
+  .sidebar nav a:hover {
+    color: #fff;
+    background: var(--navy-light);
+    border-left-color: var(--indigo);
+  }
+
+  .sidebar nav .section-label {
+    display: block;
+    padding: 1rem 1.5rem 0.4rem;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #5a6484;
+    font-weight: 600;
+  }
+
+  /* Main Content */
+  .main {
+    margin-left: 260px;
+    flex: 1;
+    padding: 2rem 3rem;
+    max-width: 1100px;
+  }
+
+  /* Executive Summary Header */
+  .exec-header {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+
+  .exec-header h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+
+  .exec-meta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+
+  .risk-badge {
+    display: inline-block;
+    padding: 0.3rem 0.9rem;
+    border-radius: 50px;
+    font-weight: 700;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #fff;
+  }
+
+  .risk-badge.critical { background: var(--critical); }
+  .risk-badge.high { background: var(--high); }
+  .risk-badge.medium { background: var(--medium); }
+  .risk-badge.low { background: var(--low); }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+  }
+
+  .stat-card {
+    text-align: center;
+    padding: 1rem;
+    background: var(--bg);
+    border-radius: 8px;
+  }
+
+  .stat-card .stat-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--navy);
+  }
+
+  .stat-card .stat-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+  }
+
+  /* Section Cards */
+  .section {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+
+  .section h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    color: var(--navy);
+  }
+
+  .section .stage-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--indigo);
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+
+  .section p.description {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    font-size: 0.88rem;
+  }
+
+  thead th {
+    background: var(--bg);
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    border-bottom: 2px solid var(--border);
+  }
+
+  tbody td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  tbody tr:hover { background: var(--bg); }
+
+  /* Vulnerability Cards */
+  .vuln-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-top: 1rem;
+    border-left: 4px solid var(--border);
+  }
+
+  .vuln-card.critical { border-left-color: var(--critical); background: var(--critical-bg); }
+  .vuln-card.high { border-left-color: var(--high); background: var(--high-bg); }
+  .vuln-card.medium { border-left-color: var(--medium); background: var(--medium-bg); }
+  .vuln-card.low { border-left-color: var(--low); background: var(--low-bg); }
+
+  .vuln-card .vuln-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .vuln-card .vuln-id {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .vuln-card .vuln-title {
+    font-weight: 600;
+    font-size: 1rem;
+  }
+
+  .severity-pill {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    border-radius: 50px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #fff;
+  }
+
+  .severity-pill.critical { background: var(--critical); }
+  .severity-pill.high { background: var(--high); }
+  .severity-pill.medium { background: var(--medium); }
+  .severity-pill.low { background: var(--low); }
+
+  .vuln-card .vuln-desc {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  /* Attack surface headers */
+  .attack-surface-header {
+    margin-top: 1.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .attack-surface-header h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+  }
+
+  .attack-surface-meta {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+  }
+
+  /* Scenario cards */
+  .scenario-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+  }
+
+  .scenario-card h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+
+  .scenario-card .objective {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+  }
+
+  .kill-chain {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .kill-chain-step {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.82rem;
+    max-width: 240px;
+  }
+
+  .kill-chain-step .step-phase {
+    font-weight: 600;
+    color: var(--indigo);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .kill-chain-step .step-action {
+    margin-top: 0.15rem;
+  }
+
+  .kill-chain-step .step-exploits {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 0.2rem;
+  }
+
+  .kill-chain-arrow {
+    color: var(--text-muted);
+    font-size: 1.2rem;
+  }
+
+  /* Diagram */
+  .diagram-container {
+    margin: 1.5rem 0;
+    text-align: center;
+    overflow-x: auto;
+  }
+
+  .diagram-container svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .mermaid-fallback {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 0.82rem;
+    white-space: pre-wrap;
+    text-align: left;
+  }
+
+  /* Recommendations */
+  .rec-list {
+    list-style: none;
+    counter-reset: rec;
+  }
+
+  .rec-list li {
+    counter-increment: rec;
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9rem;
+  }
+
+  .rec-list li:last-child { border-bottom: none; }
+
+  .rec-list li::before {
+    content: counter(rec);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    background: var(--indigo);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  .rec-priority {
+    font-weight: 600;
+    color: var(--navy);
+  }
+
+  .rec-addresses {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  /* Data flow details */
+  .flow-block {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .flow-block:first-of-type {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .flow-block h3 {
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .flow-classification {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    background: var(--indigo);
+    color: #fff;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+  }
+
+  .trust-boundary {
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg);
+    border-radius: 6px;
+    border-left: 3px solid var(--indigo);
+  }
+
+  /* Footer */
+  .report-footer {
+    text-align: center;
+    padding: 2rem 0;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .report-footer a {
+    color: var(--indigo);
+    text-decoration: none;
+  }
+
+  /* Print / PDF styles */
+  @media print {
+    .sidebar { display: none; }
+
+    .main {
+      margin-left: 0;
+      padding: 0;
+      max-width: 100%;
+    }
+
+    body { background: #fff; }
+
+    .exec-header, .section {
+      box-shadow: none;
+      break-inside: avoid;
+    }
+
+    .scenario-card, .vuln-card {
+      break-inside: avoid;
+    }
+
+    @page {
+      size: A4;
+      margin: 20mm 15mm;
+
+      @bottom-center {
+        content: "Page " counter(page) " of " counter(pages);
+        font-size: 9pt;
+        color: #6b7294;
+      }
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Sidebar Navigation -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <h2>thr8</h2>
+    <p>PASTA Threat Model</p>
+  </div>
+  <nav>
+    <a href="#executive-summary">Executive Summary</a>
+    <span class="section-label">PASTA Stages</span>
+    <a href="#stage-1-2">1-2. Business &amp; Technical Scope</a>
+    <a href="#stage-3">3. Application Decomposition</a>
+    <a href="#stage-4-5">4-5. Threat &amp; Vulnerability Analysis</a>
+    <a href="#stage-6">6. Attack Modeling</a>
+    <a href="#stage-7">7. Risk &amp; Impact Analysis</a>
+    <span class="section-label">Actions</span>
+    <a href="#recommendations">Recommendations</a>
+  </nav>
+</aside>
+
+<!-- Main Content -->
+<div class="main">
+
+  <!-- Executive Summary -->
+  <div class="exec-header" id="executive-summary">
+    <h1>{{projectName}}</h1>
+    <div class="exec-meta">
+      <span class="risk-badge {{lowercase threatModel.overall_risk_status}}">{{threatModel.overall_risk_status}} Risk</span>
+      <span>Generated {{generatedDate}}</span>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value">{{threatModel.summary.total_vulnerabilities}}</div>
+        <div class="stat-label">Vulnerabilities</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{{threatModel.summary.critical}}</div>
+        <div class="stat-label">Critical</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{{threatModel.summary.high}}</div>
+        <div class="stat-label">High</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{{threatModel.summary.medium}}</div>
+        <div class="stat-label">Medium</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{{threatModel.summary.low}}</div>
+        <div class="stat-label">Low</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{{threatModel.summary.attack_scenarios}}</div>
+        <div class="stat-label">Attack Scenarios</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stage 1 & 2: Business Objectives & Technical Scope -->
+  <div class="section" id="stage-1-2">
+    <div class="stage-label">PASTA Stage 1 &amp; 2</div>
+    <h2>Business Objectives &amp; Technical Scope</h2>
+    <p class="description">Defining why we care and what we are protecting.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Objective</th>
+          <th>Impact of Breach</th>
+          <th>Tech Context</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each threatModel.business_objectives}}
+        <tr>
+          <td><strong>{{this.objective}}</strong></td>
+          <td>{{this.impact_of_breach}} — {{this.description}}</td>
+          <td>{{this.tech_context}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Stage 3: Application Decomposition -->
+  <div class="section" id="stage-3">
+    <div class="stage-label">PASTA Stage 3</div>
+    <h2>Application Decomposition (DFD)</h2>
+    <p class="description">The visual flow of data across trust boundaries.</p>
+
+    <div class="diagram-container">
+      {{#if diagramSvg}}
+      {{{diagramSvg}}}
+      {{else}}
+      <div class="mermaid-fallback">
+        <pre class="mermaid">{{{mermaidCode}}}</pre>
+      </div>
+      {{/if}}
+    </div>
+
+    {{#each dataFlows.flows}}
+    <div class="flow-block">
+      <h3>{{this.name}} <span class="flow-classification">{{this.data_classification}}</span></h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Step</th>
+            <th>Component</th>
+            <th>Type</th>
+            <th>Protocol</th>
+            <th>Data</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each this.steps}}
+          <tr>
+            <td>{{add @index 1}}</td>
+            <td>{{this.component}}</td>
+            <td>{{this.type}}</td>
+            <td>{{this.protocol}}</td>
+            <td>{{#each this.data}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+      {{#each this.trust_boundaries}}
+      <div class="trust-boundary">
+        <strong>{{this.from}} &rarr; {{this.to}}</strong>: {{this.control}} (Auth: {{this.authentication}})
+      </div>
+      {{/each}}
+    </div>
+    {{/each}}
+  </div>
+
+  <!-- Stage 4 & 5: Threat & Vulnerability Analysis -->
+  <div class="section" id="stage-4-5">
+    <div class="stage-label">PASTA Stage 4 &amp; 5</div>
+    <h2>Threat &amp; Vulnerability Analysis</h2>
+    <p class="description">Combining external threats with this repo's specific weaknesses.</p>
+
+    {{#each threatModel.attack_surfaces}}
+    <div class="attack-surface-header">
+      <h3>{{this.name}}</h3>
+      <div class="attack-surface-meta">
+        <strong>Vector:</strong> {{this.vector}} &nbsp;|&nbsp; <strong>Weakness:</strong> {{this.weakness}}
+      </div>
+    </div>
+
+    {{#each this.vulnerabilities}}
+    <div class="vuln-card {{severityClass this.severity}}">
+      <div class="vuln-header">
+        <div>
+          <span class="vuln-id">{{this.id}}</span>
+          <div class="vuln-title">{{this.title}}</div>
+        </div>
+        <span class="severity-pill {{severityClass this.severity}}">{{this.severity}}</span>
+      </div>
+      <div class="vuln-desc">{{this.description}}</div>
+    </div>
+    {{/each}}
+    {{/each}}
+  </div>
+
+  <!-- Stage 6: Attack Modeling -->
+  <div class="section" id="stage-6">
+    <div class="stage-label">PASTA Stage 6</div>
+    <h2>Attack Modeling (Simulation)</h2>
+    <p class="description">How an attacker would realistically exploit these gaps.</p>
+
+    {{#each threatModel.attack_scenarios}}
+    <div class="scenario-card">
+      <h3>{{this.name}}</h3>
+      <div class="objective"><strong>Objective:</strong> {{this.objective}}</div>
+      <div class="kill-chain">
+        {{#each this.steps}}
+        {{#unless @first}}<span class="kill-chain-arrow">&rarr;</span>{{/unless}}
+        <div class="kill-chain-step">
+          <div class="step-phase">{{this.phase}}</div>
+          <div class="step-action">{{this.action}}</div>
+          {{#if this.exploits.length}}
+          <div class="step-exploits">{{#each this.exploits}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>
+          {{/if}}
+        </div>
+        {{/each}}
+      </div>
+    </div>
+    {{/each}}
+  </div>
+
+  <!-- Stage 7: Risk & Impact Analysis -->
+  <div class="section" id="stage-7">
+    <div class="stage-label">PASTA Stage 7</div>
+    <h2>Risk &amp; Impact Analysis</h2>
+    <p class="description">The bottom line for the business.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Risk ID</th>
+          <th>PASTA Level</th>
+          <th>Business Impact</th>
+          <th>Mitigation Complexity</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each threatModel.risk_analysis}}
+        <tr>
+          <td><strong>{{this.risk_id}}</strong></td>
+          <td><span class="severity-pill {{severityClass this.pasta_level}}">{{this.pasta_level}}</span></td>
+          <td>{{this.business_impact}}</td>
+          <td>{{this.mitigation_complexity}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Recommendations -->
+  <div class="section" id="recommendations">
+    <div class="stage-label">Action Items</div>
+    <h2>Tactical Recommendations</h2>
+    <ol class="rec-list">
+      {{#each threatModel.tactical_recommendations}}
+      <li>
+        <div>
+          <span class="rec-priority">{{this.priority}}:</span> {{this.action}}
+          {{#if this.addresses}}
+          <div class="rec-addresses">Addresses: {{#each this.addresses}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>
+          {{/if}}
+        </div>
+      </li>
+      {{/each}}
+    </ol>
+  </div>
+
+  <!-- Footer -->
+  <div class="report-footer">
+    Generated by <a href="https://github.com/cybrking/thr8">thr8</a> — PASTA Threat Model Generator
+  </div>
+
+</div>
+
+{{#unless diagramSvg}}
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+{{/unless}}
+
+</body>
+</html>

@@ -7,6 +7,7 @@ const mockCore = {
   startGroup: jest.fn(),
   endGroup: jest.fn(),
   info: jest.fn(),
+  warning: jest.fn(),
   summary: {
     addHeading: jest.fn().mockReturnThis(),
     addTable: jest.fn().mockReturnThis(),
@@ -14,6 +15,12 @@ const mockCore = {
   },
 };
 jest.mock('@actions/core', () => mockCore);
+
+// Prevent Chrome launch during tests
+jest.mock('../src/utils/chrome-finder', () => ({
+  findChrome: jest.fn(() => null),
+  CHROME_PATHS: { linux: [], darwin: [], win32: [] },
+}));
 
 jest.mock('@anthropic-ai/sdk', () => {
   return jest.fn().mockImplementation(() => ({
@@ -108,5 +115,11 @@ describe('Main Orchestrator', () => {
     await run();
     expect(mockCore.summary.addHeading).toHaveBeenCalledWith('PASTA Threat Model Generated');
     expect(mockCore.summary.write).toHaveBeenCalled();
+  });
+
+  test('always generates HTML report alongside other formats', async () => {
+    const { run } = require('../src/index');
+    await run();
+    expect(mockCore.info).toHaveBeenCalledWith(expect.stringContaining('HTML report generated'));
   });
 });

@@ -31,13 +31,21 @@ async function run() {
     // Step 3: Generate reports
     core.startGroup('Generating reports...');
     const outputDir = path.join(repoPath, 'threat-model');
-    await new ReporterAgent().generate({
+    const reportOutputs = await new ReporterAgent().generate({
       threatModel,
       dataFlows,
       formats: outputFormats,
       outputDir,
       projectName: repoName,
     });
+
+    core.info(`HTML report generated: ${reportOutputs.html}`);
+    if (reportOutputs.pdf) {
+      core.info(`PDF report generated: ${reportOutputs.pdf}`);
+    } else if (outputFormats.includes('pdf')) {
+      core.warning('PDF generation skipped — Chrome not available. HTML report contains Mermaid.js CDN fallback.');
+    }
+    core.info('Tip: Use actions/upload-artifact to persist HTML/PDF reports as workflow artifacts.');
     core.endGroup();
 
     // Step 4: Set outputs

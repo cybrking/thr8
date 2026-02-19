@@ -17,9 +17,9 @@ inputs:
     default: '.threat-model.yml'
 
   output-formats:
-    description: 'Output formats (markdown,json)'
+    description: 'Output formats (markdown,json,html,pdf)'
     required: false
-    default: 'markdown,json'
+    default: 'markdown,json,html'
 
   fail-on-high-risk:
     description: 'Fail build if critical-risk vulnerabilities found'

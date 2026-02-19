@@ -40014,10 +40014,12 @@ module.exports = CodebaseScannerAgent;
 const fs = (__nccwpck_require__(9896).promises);
 const path = __nccwpck_require__(6928);
 const Handlebars = __nccwpck_require__(8508);
+const { findChrome } = __nccwpck_require__(9014);
 
 class ReporterAgent {
   constructor() {
     this.templateDir = __nccwpck_require__.ab + "templates";
+    this._browser = null;
     this._registerHelpers();
   }
 
@@ -40033,35 +40035,173 @@ class ReporterAgent {
     });
 
     Handlebars.registerHelper('add', (a, b) => a + b);
+
+    Handlebars.registerHelper('lowercase', (str) => {
+      return str ? String(str).toLowerCase() : '';
+    });
+
+    Handlebars.registerHelper('severityClass', (level) => {
+      return level ? String(level).toLowerCase() : '';
+    });
+  }
+
+  _buildMermaidGraphCode(dataFlows) {
+    if (!dataFlows?.flows?.length) return null;
+    const lines = ['graph LR'];
+    for (const flow of dataFlows.flows) {
+      if (!flow.steps) continue;
+      for (let i = 0; i < flow.steps.length; i++) {
+        const step = flow.steps[i];
+        lines.push(`    ${flow.id}_${i}["${step.component}<br/><i>${step.type}</i>"]`);
+      }
+      for (let i = 0; i < flow.steps.length - 1; i++) {
+        const protocol = flow.steps[i].protocol || 'internal';
+        lines.push(`    ${flow.id}_${i} -->|"${protocol}"| ${flow.id}_${i + 1}`);
+      }
+      if (flow.trust_boundaries) {
+        for (let j = 0; j < flow.trust_boundaries.length; j++) {
+          const tb = flow.trust_boundaries[j];
+          lines.push(`    TB_${flow.id}_${j}[/"${tb.from} → ${tb.to}: ${tb.control}"/]`);
+        }
+      }
+    }
+    return lines.join('\n');
+  }
+
+  async _getOrCreateBrowser() {
+    if (this._browser) return this._browser;
+
+    let puppeteer;
+    try {
+      puppeteer = __nccwpck_require__(5778);
+    } catch {
+      return null;
+    }
+
+    const chromePath = findChrome();
+    if (!chromePath) return null;
+
+    try {
+      this._browser = await puppeteer.launch({
+        executablePath: chromePath,
+        headless: 'new',
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      });
+      return this._browser;
+    } catch {
+      return null;
+    }
+  }
+
+  async _closeBrowser() {
+    if (this._browser) {
+      await this._browser.close().catch(() => {});
+      this._browser = null;
+    }
+  }
+
+  async _generateHtml({ threatModel, dataFlows, outputDir, projectName }) {
+    const mermaidCode = this._buildMermaidGraphCode(dataFlows);
+    let diagramSvg = null;
+
+    // Try to pre-render Mermaid to SVG
+    if (mermaidCode) {
+      const browser = await this._getOrCreateBrowser();
+      if (browser) {
+        const { MermaidRenderer } = __nccwpck_require__(1690);
+        const renderer = new MermaidRenderer(browser);
+        diagramSvg = await renderer.render(mermaidCode);
+      }
+    }
+
+    const templateSrc = await fs.readFile(
+      path.join(this.templateDir, 'threat-model.html.hbs'), 'utf-8'
+    );
+    const template = Handlebars.compile(templateSrc);
+    const html = template({
+      threatModel,
+      dataFlows,
+      projectName: projectName || 'Unknown Project',
+      generatedDate: new Date().toISOString().split('T')[0],
+      mermaidCode: mermaidCode || '',
+      diagramSvg,
+    });
+
+    const htmlPath = path.join(outputDir, 'THREAT_MODEL.html');
+    await fs.writeFile(htmlPath, html);
+    return htmlPath;
+  }
+
+  async _generatePdf({ htmlPath, outputDir }) {
+    const browser = await this._getOrCreateBrowser();
+    if (!browser) return null;
+
+    let page;
+    try {
+      page = await browser.newPage();
+      const fileUrl = `file://${path.resolve(htmlPath)}`;
+      await page.goto(fileUrl, { waitUntil: 'networkidle0', timeout: 30000 });
+
+      const pdfPath = path.join(outputDir, 'THREAT_MODEL.pdf');
+      await page.pdf({
+        path: pdfPath,
+        format: 'A4',
+        margin: { top: '20mm', right: '15mm', bottom: '20mm', left: '15mm' },
+        printBackground: true,
+        displayHeaderFooter: true,
+        headerTemplate: '<span></span>',
+        footerTemplate: '<div style="width:100%;text-align:center;font-size:9pt;color:#6b7294;">Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>',
+      });
+      return pdfPath;
+    } catch {
+      return null;
+    } finally {
+      if (page) await page.close().catch(() => {});
+    }
   }
 
   async generate({ threatModel, dataFlows, formats, outputDir, projectName }) {
     await fs.mkdir(outputDir, { recursive: true });
     const outputs = {};
 
-    if (formats.includes('markdown')) {
-      const templateSrc = await fs.readFile(path.join(this.templateDir, 'threat-model.md.hbs'), 'utf-8');
-      const template = Handlebars.compile(templateSrc);
-      const markdown = template({
-        threatModel,
-        dataFlows,
-        projectName: projectName || 'Unknown Project',
-        generatedDate: new Date().toISOString().split('T')[0],
-      });
-      const mdPath = path.join(outputDir, 'THREAT_MODEL.md');
-      await fs.writeFile(mdPath, markdown);
-      outputs.markdown = mdPath;
-    }
+    try {
+      if (formats.includes('markdown')) {
+        const templateSrc = await fs.readFile(path.join(this.templateDir, 'threat-model.md.hbs'), 'utf-8');
+        const template = Handlebars.compile(templateSrc);
+        const markdown = template({
+          threatModel,
+          dataFlows,
+          projectName: projectName || 'Unknown Project',
+          generatedDate: new Date().toISOString().split('T')[0],
+        });
+        const mdPath = path.join(outputDir, 'THREAT_MODEL.md');
+        await fs.writeFile(mdPath, markdown);
+        outputs.markdown = mdPath;
+      }
 
-    if (formats.includes('json')) {
-      const jsonPath = path.join(outputDir, 'threat-model.json');
-      await fs.writeFile(jsonPath, JSON.stringify({
-        generated: new Date().toISOString(),
-        projectName: projectName || 'Unknown Project',
-        threatModel,
-        dataFlows,
-      }, null, 2));
-      outputs.json = jsonPath;
+      if (formats.includes('json')) {
+        const jsonPath = path.join(outputDir, 'threat-model.json');
+        await fs.writeFile(jsonPath, JSON.stringify({
+          generated: new Date().toISOString(),
+          projectName: projectName || 'Unknown Project',
+          threatModel,
+          dataFlows,
+        }, null, 2));
+        outputs.json = jsonPath;
+      }
+
+      // HTML is always generated alongside other formats
+      const htmlPath = await this._generateHtml({ threatModel, dataFlows, outputDir, projectName });
+      outputs.html = htmlPath;
+
+      if (formats.includes('pdf')) {
+        const pdfPath = await this._generatePdf({ htmlPath: outputs.html, outputDir });
+        if (pdfPath) {
+          outputs.pdf = pdfPath;
+        }
+      }
+    } finally {
+      await this._closeBrowser();
     }
 
     return outputs;
@@ -40268,13 +40408,21 @@ async function run() {
     // Step 3: Generate reports
     core.startGroup('Generating reports...');
     const outputDir = path.join(repoPath, 'threat-model');
-    await new ReporterAgent().generate({
+    const reportOutputs = await new ReporterAgent().generate({
       threatModel,
       dataFlows,
       formats: outputFormats,
       outputDir,
       projectName: repoName,
     });
+
+    core.info(`HTML report generated: ${reportOutputs.html}`);
+    if (reportOutputs.pdf) {
+      core.info(`PDF report generated: ${reportOutputs.pdf}`);
+    } else if (outputFormats.includes('pdf')) {
+      core.warning('PDF generation skipped — Chrome not available. HTML report contains Mermaid.js CDN fallback.');
+    }
+    core.info('Tip: Use actions/upload-artifact to persist HTML/PDF reports as workflow artifacts.');
     core.endGroup();
 
     // Step 4: Set outputs
@@ -40314,6 +40462,101 @@ module.exports = { run };
 if (require.main === require.cache[eval('__filename')]) {
   run();
 }
+
+
+/***/ }),
+
+/***/ 9014:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+const fs = __nccwpck_require__(9896);
+const path = __nccwpck_require__(6928);
+
+const CHROME_PATHS = {
+  linux: [
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+  ],
+  darwin: [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  ],
+  win32: [
+    path.join(process.env.PROGRAMFILES || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    path.join(process.env['PROGRAMFILES(X86)'] || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+  ],
+};
+
+function findChrome() {
+  // 1. Check CHROME_PATH env var first
+  if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
+    return process.env.CHROME_PATH;
+  }
+
+  // 2. Check platform-specific paths
+  const platform = process.platform;
+  const paths = CHROME_PATHS[platform] || [];
+  for (const p of paths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+
+  return null;
+}
+
+module.exports = { findChrome, CHROME_PATHS };
+
+
+/***/ }),
+
+/***/ 1690:
+/***/ ((module) => {
+
+const MERMAID_CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js';
+
+class MermaidRenderer {
+  constructor(browser) {
+    this.browser = browser;
+  }
+
+  async render(mermaidCode) {
+    let page;
+    try {
+      page = await this.browser.newPage();
+      await page.setContent(`
+        <!DOCTYPE html>
+        <html><head><script src="${MERMAID_CDN}"></script></head>
+        <body><div id="container"></div></body></html>
+      `, { waitUntil: 'networkidle0', timeout: 15000 });
+
+      const svg = await page.evaluate(async (code) => {
+        mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose' });
+        const { svg } = await mermaid.render('diagram', code);
+        return svg;
+      }, mermaidCode);
+
+      return svg;
+    } catch (err) {
+      return null;
+    } finally {
+      if (page) await page.close().catch(() => {});
+    }
+  }
+
+  async renderMultiple(diagrams) {
+    const results = {};
+    for (const [key, code] of Object.entries(diagrams)) {
+      results[key] = await this.render(code);
+    }
+    return results;
+  }
+}
+
+module.exports = { MermaidRenderer, MERMAID_CDN };
 
 
 /***/ }),
@@ -40657,6 +40900,14 @@ module.exports = require("perf_hooks");
 
 "use strict";
 module.exports = require("punycode");
+
+/***/ }),
+
+/***/ 5778:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("puppeteer-core");
 
 /***/ }),
 
