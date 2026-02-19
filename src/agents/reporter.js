@@ -9,11 +9,6 @@ class ReporterAgent {
   }
 
   _registerHelpers() {
-    Handlebars.registerHelper('statusIcon', (status) => {
-      const icons = { compliant: '✅', implemented: '✅', partial: '⚠️', missing: '❌', non_compliant: '❌' };
-      return icons[status] || '❓';
-    });
-
     Handlebars.registerHelper('severityIcon', (level) => {
       const icons = { Critical: '🔴', High: '🟠', Medium: '🟡', Low: '🟢', CRITICAL: '🔴', HIGH: '🟠', MEDIUM: '🟡', LOW: '🟢' };
       return icons[level] || '⚪';
@@ -27,7 +22,7 @@ class ReporterAgent {
     Handlebars.registerHelper('add', (a, b) => a + b);
   }
 
-  async generate({ threatModel, dataFlows, complianceResults, formats, outputDir, projectName }) {
+  async generate({ threatModel, dataFlows, formats, outputDir, projectName }) {
     await fs.mkdir(outputDir, { recursive: true });
     const outputs = {};
 
@@ -37,7 +32,6 @@ class ReporterAgent {
       const markdown = template({
         threatModel,
         dataFlows,
-        complianceResults,
         projectName: projectName || 'Unknown Project',
         generatedDate: new Date().toISOString().split('T')[0],
       });
@@ -53,7 +47,6 @@ class ReporterAgent {
         projectName: projectName || 'Unknown Project',
         threatModel,
         dataFlows,
-        complianceResults,
       }, null, 2));
       outputs.json = jsonPath;
     }

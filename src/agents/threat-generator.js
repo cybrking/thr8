@@ -26,7 +26,7 @@ class ThreatGeneratorAgent {
   async generate(context) {
     const patterns = this._loadPatterns();
 
-    const systemPrompt = `You are a senior security engineer performing a PASTA (Process for Attack Simulation and Threat Analysis) assessment. Analyze the system and produce a risk-centric threat model covering PASTA Stages 1-2 and 4-6.
+    const systemPrompt = `You are a senior security engineer performing a PASTA (Process for Attack Simulation and Threat Analysis) assessment. Analyze the system and produce a complete risk-centric threat model covering all PASTA Stages (1-2, 4-7).
 
 IMPORTANT: Be concise. 1-2 sentences per description. Focus on the most critical and realistic threats.
 
@@ -69,6 +69,23 @@ Output ONLY valid JSON matching this schema:
       ]
     }
   ],
+  "risk_analysis": [
+    {
+      "risk_id": "SHORT-ID",
+      "title": "Short risk title",
+      "pasta_level": "Critical|High|Medium|Low",
+      "business_impact": "Brief impact statement",
+      "mitigation_complexity": "Low|Medium|High",
+      "linked_vulnerabilities": ["VULN-IDs from attack_surfaces"]
+    }
+  ],
+  "tactical_recommendations": [
+    {
+      "priority": "Immediate|Short-term|Medium-term",
+      "action": "Specific actionable recommendation",
+      "addresses": ["RISK-IDs this fixes"]
+    }
+  ],
   "summary": {
     "total_vulnerabilities": 0,
     "critical": 0,
@@ -80,11 +97,15 @@ Output ONLY valid JSON matching this schema:
   }
 }
 
-For business_objectives: Analyze the tech stack and identify what the business is protecting and why it matters.
+Stage 1-2 (business_objectives): Analyze the tech stack and identify what the business is protecting and why it matters.
 
-For attack_surfaces: Group vulnerabilities by attack vector (public API, input validation, data storage, external integrations, etc.). Each surface should have a clear vector, weakness, and specific vulnerabilities.
+Stage 4-5 (attack_surfaces): Group vulnerabilities by attack vector. Each surface should have a clear vector, weakness, and specific vulnerabilities.
 
-For attack_scenarios: Model realistic multi-step attack kill chains showing how an attacker would combine vulnerabilities. Show the progression from reconnaissance through exploitation to impact. Reference vulnerability IDs from attack_surfaces.`;
+Stage 6 (attack_scenarios): Model realistic multi-step attack kill chains showing how an attacker would combine vulnerabilities. Reference vulnerability IDs from attack_surfaces.
+
+Stage 7 (risk_analysis): Map each attack surface/scenario to business risk with PASTA severity levels. Focus on business impact, not just technical severity.
+
+Tactical recommendations: Provide specific, actionable steps ordered by priority. Reference which risks each recommendation addresses.`;
 
     try {
       const params = {
@@ -112,6 +133,8 @@ ${JSON.stringify(patterns, null, 2)}`
         overall_risk_status: 'UNKNOWN',
         attack_surfaces: [],
         attack_scenarios: [],
+        risk_analysis: [],
+        tactical_recommendations: [],
         summary: {
           total_vulnerabilities: 0,
           critical: 0,

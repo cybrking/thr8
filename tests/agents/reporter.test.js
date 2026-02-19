@@ -35,11 +35,21 @@ describe('ReporterAgent', () => {
           { phase: 'Exploitation', action: 'Access endpoints', exploits: ['API-001'] }
         ]
       }],
+      risk_analysis: [{
+        risk_id: 'AUTH-001',
+        title: 'Auth Bypass',
+        pasta_level: 'Critical',
+        business_impact: 'Full breach',
+        mitigation_complexity: 'Medium',
+        linked_vulnerabilities: ['API-001']
+      }],
+      tactical_recommendations: [
+        { priority: 'Immediate', action: 'Add authentication', addresses: ['AUTH-001'] }
+      ],
       summary: {
         total_vulnerabilities: 1,
         critical: 1, high: 0, medium: 0, low: 0,
-        attack_scenarios: 1,
-        attack_surfaces: 1
+        attack_scenarios: 1, attack_surfaces: 1
       }
     },
     dataFlows: {
@@ -54,32 +64,6 @@ describe('ReporterAgent', () => {
         trust_boundaries: [{ from: 'Internet', to: 'App', control: 'TLS', authentication: 'None' }]
       }]
     },
-    complianceResults: [{
-      framework: 'SOC2',
-      version: '2017',
-      assessment_date: '2026-02-17',
-      risk_analysis: [{
-        risk_id: 'AUTH-001',
-        title: 'Auth Bypass',
-        pasta_level: 'Critical',
-        business_impact: 'Full breach',
-        mitigation_complexity: 'Medium',
-        linked_vulnerabilities: ['API-001']
-      }],
-      controls: [{
-        control_id: 'CC6.1',
-        description: 'Access controls',
-        status: 'compliant',
-        coverage: 100,
-        evidence: ['JWT auth'],
-        gaps: [],
-        recommendations: []
-      }],
-      tactical_recommendations: [
-        { priority: 'Immediate', action: 'Add authentication', addresses: ['AUTH-001'] }
-      ],
-      summary: { total_controls: 1, compliant: 1, partial: 0, non_compliant: 0, overall_score: 100 }
-    }],
     projectName: 'test-project'
   };
 
@@ -127,7 +111,7 @@ describe('ReporterAgent', () => {
     expect(exists).toBe(true);
   });
 
-  test('markdown contains attack surfaces and scenarios', async () => {
+  test('markdown contains attack surfaces, scenarios, and risk analysis', async () => {
     const result = await agent.generate({
       ...sampleData,
       formats: ['markdown'],
@@ -137,19 +121,8 @@ describe('ReporterAgent', () => {
     expect(content).toContain('Threat & Vulnerability Analysis');
     expect(content).toContain('API-001');
     expect(content).toContain('Attack Modeling');
-    expect(content).toContain('Data Exfiltration');
-  });
-
-  test('markdown contains risk analysis and compliance', async () => {
-    const result = await agent.generate({
-      ...sampleData,
-      formats: ['markdown'],
-      outputDir,
-    });
-    const content = await fs.readFile(result.markdown, 'utf-8');
     expect(content).toContain('Risk & Impact Analysis');
-    expect(content).toContain('SOC2');
-    expect(content).toContain('Tactical Recommendations');
     expect(content).toContain('AUTH-001');
+    expect(content).toContain('Tactical Recommendations');
   });
 });

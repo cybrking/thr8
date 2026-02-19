@@ -1,6 +1,6 @@
-name: 'Threat Model Generator'
-description: 'Auto-generate compliance-ready threat models from repository analysis'
-author: 'threat.dev'
+name: 'PASTA Threat Model Generator'
+description: 'Auto-generate PASTA threat models from repository analysis'
+author: 'cybrking'
 
 branding:
   icon: 'shield'
@@ -16,28 +16,21 @@ inputs:
     required: false
     default: '.threat-model.yml'
 
-  frameworks:
-    description: 'Compliance frameworks to assess (SOC2,PCI-DSS,HIPAA)'
-    required: false
-    default: 'SOC2'
-
   output-formats:
     description: 'Output formats (markdown,json)'
     required: false
     default: 'markdown,json'
 
   fail-on-high-risk:
-    description: 'Fail build if high-risk unmitigated threats found'
+    description: 'Fail build if critical-risk vulnerabilities found'
     required: false
     default: 'false'
 
 outputs:
   threats-found:
-    description: 'Total threats identified'
+    description: 'Total vulnerabilities identified'
   high-risk-count:
-    description: 'High-risk unmitigated threats'
-  compliance-score:
-    description: 'Compliance percentage (0-100)'
+    description: 'Critical-risk vulnerabilities'
   report-path:
     description: 'Path to generated report'
 

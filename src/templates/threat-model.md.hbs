@@ -102,35 +102,18 @@ graph LR
 
 *The bottom line for the business.*
 
-{{#each complianceResults}}
-{{#if this.risk_analysis.length}}
 | Risk ID | PASTA Level | Business Impact | Mitigation Complexity |
 |---------|-------------|-----------------|----------------------|
-{{#each this.risk_analysis}}
+{{#each threatModel.risk_analysis}}
 | **{{this.risk_id}}** | {{severityIcon this.pasta_level}} **{{this.pasta_level}}** | {{this.business_impact}} | {{this.mitigation_complexity}} |
-{{/each}}
-{{/if}}
-
-### {{this.framework}} Compliance ({{this.version}})
-
-**Overall Score: {{this.summary.overall_score}}%** | Compliant: {{this.summary.compliant}} | Partial: {{this.summary.partial}} | Non-Compliant: {{this.summary.non_compliant}}
-
-| Control | Status | Coverage | Evidence |
-|---------|--------|----------|----------|
-{{#each this.controls}}
-| {{this.control_id}} | {{statusIcon this.status}} {{this.status}} | {{this.coverage}}% | {{#each this.evidence}}{{this}}{{#unless @last}}; {{/unless}}{{/each}} |
-{{/each}}
-
 {{/each}}
 
 ---
 
 ## Tactical Recommendations
 
-{{#each complianceResults}}
-{{#each this.tactical_recommendations}}
+{{#each threatModel.tactical_recommendations}}
 {{add @index 1}}. **{{this.priority}}**: {{this.action}}{{#if this.addresses}} *(addresses: {{#each this.addresses}}`{{this}}`{{#unless @last}}, {{/unless}}{{/each}})*{{/if}}
-{{/each}}
 {{/each}}
 
 ---

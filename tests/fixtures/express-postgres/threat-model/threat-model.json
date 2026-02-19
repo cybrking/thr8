@@ -1,11 +1,13 @@
 {
-  "generated": "2026-02-19T00:12:26.942Z",
+  "generated": "2026-02-19T00:45:20.758Z",
   "projectName": "cybrking/test-project",
   "threatModel": {
     "business_objectives": [],
     "overall_risk_status": "CRITICAL",
     "attack_surfaces": [],
     "attack_scenarios": [],
+    "risk_analysis": [],
+    "tactical_recommendations": [],
     "summary": {
       "total_vulnerabilities": 3,
       "critical": 2,
@@ -18,22 +20,5 @@
   },
   "dataFlows": {
     "flows": []
-  },
-  "complianceResults": [
-    {
-      "business_objectives": [],
-      "overall_risk_status": "CRITICAL",
-      "attack_surfaces": [],
-      "attack_scenarios": [],
-      "summary": {
-        "total_vulnerabilities": 3,
-        "critical": 2,
-        "high": 1,
-        "medium": 0,
-        "low": 0,
-        "attack_scenarios": 1,
-        "attack_surfaces": 1
-      }
-    }
-  ]
+  }
 }

@@ -28,6 +28,17 @@ const mockPastaModel = {
       { phase: 'Exploitation', action: 'Access unprotected endpoints', exploits: ['API-SPOOF-001'] }
     ]
   }],
+  risk_analysis: [{
+    risk_id: 'AUTH-001',
+    title: 'Auth Bypass',
+    pasta_level: 'Critical',
+    business_impact: 'Full data breach',
+    mitigation_complexity: 'Medium',
+    linked_vulnerabilities: ['API-SPOOF-001']
+  }],
+  tactical_recommendations: [
+    { priority: 'Immediate', action: 'Implement authentication middleware', addresses: ['AUTH-001'] }
+  ],
   summary: {
     total_vulnerabilities: 5,
     critical: 1,
@@ -51,7 +62,7 @@ jest.mock('@anthropic-ai/sdk', () => {
 });
 
 describe('ThreatGeneratorAgent', () => {
-  test('returns PASTA threat model with attack surfaces and scenarios', async () => {
+  test('returns full PASTA model with all stages', async () => {
     const agent = new ThreatGeneratorAgent('test-key');
     const result = await agent.generate({
       techStack: { framework: { name: 'Express' } },
@@ -61,9 +72,10 @@ describe('ThreatGeneratorAgent', () => {
     });
     expect(result.business_objectives).toBeDefined();
     expect(result.overall_risk_status).toBe('HIGH');
-    expect(result.attack_surfaces).toBeDefined();
     expect(result.attack_surfaces[0].vulnerabilities.length).toBeGreaterThan(0);
     expect(result.attack_scenarios).toBeDefined();
+    expect(result.risk_analysis[0].pasta_level).toBe('Critical');
+    expect(result.tactical_recommendations.length).toBeGreaterThan(0);
     expect(result.summary.total_vulnerabilities).toBe(5);
   });
 
@@ -77,7 +89,8 @@ describe('ThreatGeneratorAgent', () => {
       techStack: {}, infrastructure: {}, apiSurface: { endpoints: [] }, dataFlows: { flows: [] }
     });
     expect(result.attack_surfaces).toEqual([]);
-    expect(result.attack_scenarios).toEqual([]);
+    expect(result.risk_analysis).toEqual([]);
+    expect(result.tactical_recommendations).toEqual([]);
     expect(result.summary.total_vulnerabilities).toBe(0);
   });
 });

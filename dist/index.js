@@ -43900,130 +43900,6 @@ module.exports = APISurfaceAgent;
 
 /***/ }),
 
-/***/ 25:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-const Anthropic = __nccwpck_require__(121);
-const fs = __nccwpck_require__(9896);
-const path = __nccwpck_require__(6928);
-const { parseJsonResponse, callWithContinuation } = __nccwpck_require__(5119);
-
-class ComplianceAgent {
-  constructor(apiKey, frameworkName) {
-    this.client = new Anthropic({ apiKey });
-    this.frameworkName = frameworkName;
-  }
-
-  _loadFramework() {
-    const fileName = this.frameworkName.toLowerCase() + '.json';
-    const filePath = __nccwpck_require__.ab + "frameworks/" + fileName;
-    try {
-      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    } catch (error) {
-      console.error(`Failed to load framework ${this.frameworkName}:`, error.message);
-      return null;
-    }
-  }
-
-  async assess(threatModel) {
-    const framework = this._loadFramework();
-
-    const systemPrompt = `You are a security risk analyst performing PASTA Stage 7 (Risk & Impact Analysis) and compliance assessment against the ${this.frameworkName} framework.
-
-Given the PASTA threat analysis (business objectives, attack surfaces, attack scenarios), produce a risk-centric impact assessment and compliance mapping.
-
-IMPORTANT: Be concise. Keep descriptions to 1 sentence. Focus on actionable output.
-
-Output ONLY valid JSON matching this schema:
-{
-  "framework": "${this.frameworkName}",
-  "version": "Framework version string",
-  "assessment_date": "${new Date().toISOString().split('T')[0]}",
-  "risk_analysis": [
-    {
-      "risk_id": "SHORT-ID",
-      "title": "Short risk title",
-      "pasta_level": "Critical|High|Medium|Low",
-      "business_impact": "Brief impact statement",
-      "mitigation_complexity": "Low|Medium|High",
-      "linked_vulnerabilities": ["VULN-IDs from threat model"]
-    }
-  ],
-  "controls": [
-    {
-      "control_id": "Control identifier",
-      "description": "Control description",
-      "status": "compliant|partial|non_compliant",
-      "coverage": 0,
-      "evidence": ["Brief evidence"],
-      "gaps": ["Brief gap if any"],
-      "recommendations": ["Brief recommendation"]
-    }
-  ],
-  "tactical_recommendations": [
-    {
-      "priority": "Immediate|Short-term|Medium-term",
-      "action": "Specific actionable recommendation",
-      "addresses": ["RISK-IDs this fixes"]
-    }
-  ],
-  "summary": {
-    "total_controls": 0,
-    "compliant": 0,
-    "partial": 0,
-    "non_compliant": 0,
-    "overall_score": 0
-  }
-}
-
-Calculate overall_score as percentage: (compliant * 100 + partial * 50) / total_controls.
-
-For risk_analysis: Map each attack surface/scenario to business risk with PASTA severity levels. Focus on business impact, not just technical severity.
-
-For tactical_recommendations: Provide specific, actionable steps ordered by priority. Reference which risks each recommendation addresses.`;
-
-    try {
-      const params = {
-        model: 'claude-sonnet-4-6',
-        max_tokens: 16384,
-        system: systemPrompt,
-        messages: [{
-          role: 'user',
-          content: `Perform PASTA Stage 7 risk analysis and ${this.frameworkName} compliance assessment:
-
-PASTA Threat Analysis:
-${JSON.stringify(threatModel, null, 2)}
-
-${framework ? `Framework Definition:\n${JSON.stringify(framework, null, 2)}` : `Framework: ${this.frameworkName} (definition not available, use standard knowledge)`}`
-        }],
-      };
-
-      const text = await callWithContinuation(this.client, params);
-      return parseJsonResponse(text);
-    } catch (error) {
-      console.error('Compliance assessment failed:', error.message);
-      return {
-        framework: this.frameworkName,
-        risk_analysis: [],
-        controls: [],
-        tactical_recommendations: [],
-        summary: {
-          total_controls: 0,
-          compliant: 0,
-          partial: 0,
-          non_compliant: 0,
-          overall_score: 0
-        }
-      };
-    }
-  }
-}
-
-module.exports = ComplianceAgent;
-
-
-/***/ }),
-
 /***/ 8987:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
@@ -44172,11 +44048,6 @@ class ReporterAgent {
   }
 
   _registerHelpers() {
-    Handlebars.registerHelper('statusIcon', (status) => {
-      const icons = { compliant: '✅', implemented: '✅', partial: '⚠️', missing: '❌', non_compliant: '❌' };
-      return icons[status] || '❓';
-    });
-
     Handlebars.registerHelper('severityIcon', (level) => {
       const icons = { Critical: '🔴', High: '🟠', Medium: '🟡', Low: '🟢', CRITICAL: '🔴', HIGH: '🟠', MEDIUM: '🟡', LOW: '🟢' };
       return icons[level] || '⚪';
@@ -44190,7 +44061,7 @@ class ReporterAgent {
     Handlebars.registerHelper('add', (a, b) => a + b);
   }
 
-  async generate({ threatModel, dataFlows, complianceResults, formats, outputDir, projectName }) {
+  async generate({ threatModel, dataFlows, formats, outputDir, projectName }) {
     await fs.mkdir(outputDir, { recursive: true });
     const outputs = {};
 
@@ -44200,7 +44071,6 @@ class ReporterAgent {
       const markdown = template({
         threatModel,
         dataFlows,
-        complianceResults,
         projectName: projectName || 'Unknown Project',
         generatedDate: new Date().toISOString().split('T')[0],
       });
@@ -44216,7 +44086,6 @@ class ReporterAgent {
         projectName: projectName || 'Unknown Project',
         threatModel,
         dataFlows,
-        complianceResults,
       }, null, 2));
       outputs.json = jsonPath;
     }
@@ -44312,7 +44181,7 @@ class ThreatGeneratorAgent {
   async generate(context) {
     const patterns = this._loadPatterns();
 
-    const systemPrompt = `You are a senior security engineer performing a PASTA (Process for Attack Simulation and Threat Analysis) assessment. Analyze the system and produce a risk-centric threat model covering PASTA Stages 1-2 and 4-6.
+    const systemPrompt = `You are a senior security engineer performing a PASTA (Process for Attack Simulation and Threat Analysis) assessment. Analyze the system and produce a complete risk-centric threat model covering all PASTA Stages (1-2, 4-7).
 
 IMPORTANT: Be concise. 1-2 sentences per description. Focus on the most critical and realistic threats.
 
@@ -44355,6 +44224,23 @@ Output ONLY valid JSON matching this schema:
       ]
     }
   ],
+  "risk_analysis": [
+    {
+      "risk_id": "SHORT-ID",
+      "title": "Short risk title",
+      "pasta_level": "Critical|High|Medium|Low",
+      "business_impact": "Brief impact statement",
+      "mitigation_complexity": "Low|Medium|High",
+      "linked_vulnerabilities": ["VULN-IDs from attack_surfaces"]
+    }
+  ],
+  "tactical_recommendations": [
+    {
+      "priority": "Immediate|Short-term|Medium-term",
+      "action": "Specific actionable recommendation",
+      "addresses": ["RISK-IDs this fixes"]
+    }
+  ],
   "summary": {
     "total_vulnerabilities": 0,
     "critical": 0,
@@ -44366,11 +44252,15 @@ Output ONLY valid JSON matching this schema:
   }
 }
 
-For business_objectives: Analyze the tech stack and identify what the business is protecting and why it matters.
+Stage 1-2 (business_objectives): Analyze the tech stack and identify what the business is protecting and why it matters.
 
-For attack_surfaces: Group vulnerabilities by attack vector (public API, input validation, data storage, external integrations, etc.). Each surface should have a clear vector, weakness, and specific vulnerabilities.
+Stage 4-5 (attack_surfaces): Group vulnerabilities by attack vector. Each surface should have a clear vector, weakness, and specific vulnerabilities.
 
-For attack_scenarios: Model realistic multi-step attack kill chains showing how an attacker would combine vulnerabilities. Show the progression from reconnaissance through exploitation to impact. Reference vulnerability IDs from attack_surfaces.`;
+Stage 6 (attack_scenarios): Model realistic multi-step attack kill chains showing how an attacker would combine vulnerabilities. Reference vulnerability IDs from attack_surfaces.
+
+Stage 7 (risk_analysis): Map each attack surface/scenario to business risk with PASTA severity levels. Focus on business impact, not just technical severity.
+
+Tactical recommendations: Provide specific, actionable steps ordered by priority. Reference which risks each recommendation addresses.`;
 
     try {
       const params = {
@@ -44398,6 +44288,8 @@ ${JSON.stringify(patterns, null, 2)}`
         overall_risk_status: 'UNKNOWN',
         attack_surfaces: [],
         attack_scenarios: [],
+        risk_analysis: [],
+        tactical_recommendations: [],
         summary: {
           total_vulnerabilities: 0,
           critical: 0,
@@ -44428,14 +44320,12 @@ const InfrastructureAgent = __nccwpck_require__(3381);
 const APISurfaceAgent = __nccwpck_require__(4106);
 const DataFlowAgent = __nccwpck_require__(8987);
 const ThreatGeneratorAgent = __nccwpck_require__(3886);
-const ComplianceAgent = __nccwpck_require__(25);
 const ReporterAgent = __nccwpck_require__(1523);
 
 async function run() {
   try {
     const repoPath = process.env.GITHUB_WORKSPACE;
     const apiKey = core.getInput('anthropic-api-key', { required: true });
-    const frameworks = core.getInput('frameworks').split(',').map(s => s.trim()).filter(Boolean);
     const outputFormats = core.getInput('output-formats').split(',').map(s => s.trim()).filter(Boolean);
     const failOnHighRisk = core.getInput('fail-on-high-risk') === 'true';
 
@@ -44458,47 +44348,35 @@ async function run() {
     });
     core.endGroup();
 
-    // Step 3: PASTA threat analysis (Stages 1-2, 4-6)
+    // Step 3: PASTA threat analysis (Stages 1-2, 4-7)
     core.startGroup('Generating PASTA threat analysis...');
     const threatModel = await new ThreatGeneratorAgent(apiKey).generate({
       techStack, infrastructure, apiSurface, dataFlows,
     });
     core.endGroup();
 
-    // Step 4: Risk & compliance assessment (PASTA Stage 7)
-    core.startGroup('Assessing risk & compliance...');
-    const complianceResults = [];
-    for (const fw of frameworks) {
-      const result = await new ComplianceAgent(apiKey, fw).assess(threatModel);
-      complianceResults.push(result);
-    }
-    core.endGroup();
-
-    // Step 5: Generate reports
+    // Step 4: Generate reports
     core.startGroup('Generating reports...');
     const outputDir = path.join(repoPath, 'threat-model');
     await new ReporterAgent().generate({
       threatModel,
       dataFlows,
-      complianceResults,
       formats: outputFormats,
       outputDir,
       projectName: repoName,
     });
     core.endGroup();
 
-    // Step 6: Set outputs
+    // Step 5: Set outputs
     const totalVulns = threatModel.summary?.total_vulnerabilities || 0;
     const criticalCount = threatModel.summary?.critical || 0;
-    const complianceScore = complianceResults[0]?.summary?.overall_score || 0;
     const riskStatus = threatModel.overall_risk_status || 'UNKNOWN';
 
     core.setOutput('threats-found', totalVulns);
     core.setOutput('high-risk-count', criticalCount);
-    core.setOutput('compliance-score', complianceScore);
     core.setOutput('report-path', outputDir);
 
-    // Step 7: Job summary
+    // Step 6: Job summary
     await core.summary
       .addHeading('PASTA Threat Model Generated')
       .addTable([
@@ -44507,11 +44385,10 @@ async function run() {
         ['Total Vulnerabilities', String(totalVulns)],
         ['Critical', String(criticalCount)],
         ['Attack Scenarios', String(threatModel.summary?.attack_scenarios || 0)],
-        ['Compliance Score', `${complianceScore}%`],
       ])
       .write();
 
-    // Step 8: Fail if needed
+    // Step 7: Fail if needed
     if (failOnHighRisk && criticalCount > 0) {
       core.setFailed(`Found ${criticalCount} critical-risk vulnerabilities`);
     }
