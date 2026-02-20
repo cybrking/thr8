@@ -40438,63 +40438,21 @@ async function run() {
     const highCount = threatModel.summary?.high || 0;
     const mediumCount = threatModel.summary?.medium || 0;
     const lowCount = threatModel.summary?.low || 0;
-    const attackScenarios = threatModel.summary?.attack_scenarios || 0;
-    const attackSurfaces = threatModel.summary?.attack_surfaces || 0;
 
-    const riskEmoji = { CRITICAL: '\uD83D\uDD34', HIGH: '\uD83D\uDFE0', MEDIUM: '\uD83D\uDFE1', LOW: '\uD83D\uDFE2' }[riskStatus] || '\u26AA';
+    const riskOrder = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+    const priorityOrder = { Immediate: 0, 'Short-term': 1 };
 
-    // Section 1 — Header + Risk Banner
+    // Section 1 — Overall Risk
     core.summary
       .addHeading('PASTA Threat Model Results', 1)
-      .addRaw(`${riskEmoji} **Overall Risk: ${riskStatus}**\n\n`);
+      .addRaw(`**Overall Risk: ${riskStatus}**\n\n`);
 
-    // Section 2 — Metrics Bar
-    core.summary.addTable([
-      [
-        { data: 'Files Scanned', header: true },
-        { data: 'Vulnerabilities', header: true },
-        { data: 'Critical', header: true },
-        { data: 'High', header: true },
-        { data: 'Medium', header: true },
-        { data: 'Low', header: true },
-        { data: 'Attack Scenarios', header: true },
-        { data: 'Attack Surfaces', header: true },
-      ],
-      [
-        String(filesScanned), String(totalVulns), String(criticalCount), String(highCount),
-        String(mediumCount), String(lowCount), String(attackScenarios), String(attackSurfaces),
-      ],
-    ]);
-
-    // Collect all vulnerabilities with their attack surface context
-    const allVulns = (threatModel.attack_surfaces || []).flatMap(surface =>
-      (surface.vulnerabilities || []).map(v => ({ ...v, surface: surface.name }))
+    // Section 2 — Top Risks (sorted Critical → Low)
+    const allRisks = [...(threatModel.risk_analysis || [])].sort(
+      (a, b) => (riskOrder[a.pasta_level] ?? 9) - (riskOrder[b.pasta_level] ?? 9)
     );
-
-    // Section 3 — Critical & High Vulnerabilities
-    const critHighVulns = allVulns.filter(v => v.severity === 'Critical' || v.severity === 'High');
-    if (critHighVulns.length > 0) {
+    if (allRisks.length > 0) {
       core.summary
-        .addSeparator()
-        .addHeading('Critical & High Vulnerabilities', 3)
-        .addTable([
-          [
-            { data: 'Severity', header: true },
-            { data: 'ID', header: true },
-            { data: 'Title', header: true },
-            { data: 'Attack Surface', header: true },
-          ],
-          ...critHighVulns.map(v => [v.severity, v.id, v.title, v.surface]),
-        ]);
-    }
-
-    // Section 4 — Top Risks
-    const topRisks = (threatModel.risk_analysis || []).filter(
-      r => r.pasta_level === 'Critical' || r.pasta_level === 'High'
-    );
-    if (topRisks.length > 0) {
-      core.summary
-        .addSeparator()
         .addHeading('Top Risks', 3)
         .addTable([
           [
@@ -40503,17 +40461,16 @@ async function run() {
             { data: 'Business Impact', header: true },
             { data: 'Fix Complexity', header: true },
           ],
-          ...topRisks.map(r => [r.title, r.pasta_level, r.business_impact, r.mitigation_complexity]),
+          ...allRisks.map(r => [r.title, r.pasta_level, r.business_impact, r.mitigation_complexity]),
         ]);
     }
 
-    // Section 5 — Recommended Actions
-    const urgentActions = (threatModel.tactical_recommendations || []).filter(
-      r => r.priority === 'Immediate' || r.priority === 'Short-term'
-    );
+    // Section 3 — Recommended Actions (sorted Immediate → Short-term)
+    const urgentActions = (threatModel.tactical_recommendations || [])
+      .filter(r => r.priority === 'Immediate' || r.priority === 'Short-term')
+      .sort((a, b) => (priorityOrder[a.priority] ?? 9) - (priorityOrder[b.priority] ?? 9));
     if (urgentActions.length > 0) {
       core.summary
-        .addSeparator()
         .addHeading('Recommended Actions', 3)
         .addTable([
           [
@@ -40525,21 +40482,14 @@ async function run() {
         ]);
     }
 
-    // Section 6 — Attack Scenarios (collapsible)
+    // Section 4 — Attack Scenarios (collapsible, HTML table)
     const scenarios = threatModel.attack_scenarios || [];
     if (scenarios.length > 0) {
-      const scenarioList = scenarios.map(s => `- **${s.name}** — ${s.objective}`).join('\n');
-      core.summary.addDetails('Attack Scenarios', scenarioList);
-    }
-
-    // Section 7 — Medium & Low Vulnerabilities (collapsible)
-    const medLowVulns = allVulns.filter(v => v.severity === 'Medium' || v.severity === 'Low');
-    if (medLowVulns.length > 0) {
-      const rows = medLowVulns.map(v =>
-        `<tr><td>${v.severity}</td><td>${v.id}</td><td>${v.title}</td><td>${v.surface}</td></tr>`
+      const scenarioRows = scenarios.map(s =>
+        `<tr><td><strong>${s.name}</strong></td><td>${s.objective}</td></tr>`
       ).join('\n');
-      const table = `<table><tr><th>Severity</th><th>ID</th><th>Title</th><th>Attack Surface</th></tr>\n${rows}\n</table>`;
-      core.summary.addDetails('Medium & Low Vulnerabilities', table);
+      const scenarioTable = `<table>\n<tr><th>Scenario</th><th>Objective</th></tr>\n${scenarioRows}\n</table>`;
+      core.summary.addDetails('Attack Scenarios', scenarioTable);
     }
 
     await core.summary.write();

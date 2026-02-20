@@ -140,7 +140,7 @@ describe('Main Orchestrator', () => {
     await run();
     expect(mockCore.summary.addDetails).toHaveBeenCalledWith(
       'Attack Scenarios',
-      expect.stringContaining('**Test**')
+      expect.stringContaining('<strong>Test</strong>')
     );
   });
 
