@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Generate Threat Model
-        uses: cybrking/thr8@v1
+        uses: cybrking/thr8@v1.0.0.0
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
@@ -131,7 +131,7 @@ Generated from the HTML report via headless Chrome. Requires Chrome/Chromium on 
 
 ```yaml
 - name: Generate Threat Model
-  uses: cybrking/thr8@v1
+  uses: cybrking/thr8@v1.0.0.0
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     fail-on-high-risk: 'true'
@@ -141,7 +141,7 @@ Generated from the HTML report via headless Chrome. Requires Chrome/Chromium on 
 
 ```yaml
 - name: Generate Threat Model
-  uses: cybrking/thr8@v1
+  uses: cybrking/thr8@v1.0.0.0
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     output-formats: 'json'
@@ -152,7 +152,7 @@ Generated from the HTML report via headless Chrome. Requires Chrome/Chromium on 
 ```yaml
 - name: Generate Threat Model
   id: threat-model
-  uses: cybrking/thr8@v1
+  uses: cybrking/thr8@v1.0.0.0
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
