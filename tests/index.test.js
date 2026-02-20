@@ -11,6 +11,9 @@ const mockCore = {
   summary: {
     addHeading: jest.fn().mockReturnThis(),
     addTable: jest.fn().mockReturnThis(),
+    addRaw: jest.fn().mockReturnThis(),
+    addSeparator: jest.fn().mockReturnThis(),
+    addDetails: jest.fn().mockReturnThis(),
     write: jest.fn().mockResolvedValue(undefined),
   },
 };
@@ -113,8 +116,32 @@ describe('Main Orchestrator', () => {
   test('writes PASTA job summary', async () => {
     const { run } = require('../src/index');
     await run();
-    expect(mockCore.summary.addHeading).toHaveBeenCalledWith('PASTA Threat Model Generated');
+    expect(mockCore.summary.addHeading).toHaveBeenCalledWith('PASTA Threat Model Results', 1);
     expect(mockCore.summary.write).toHaveBeenCalled();
+  });
+
+  test('summary includes recommended actions for Immediate priority', async () => {
+    const { run } = require('../src/index');
+    await run();
+    expect(mockCore.summary.addTable).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.arrayContaining([
+          expect.objectContaining({ data: 'Priority', header: true }),
+          expect.objectContaining({ data: 'Action', header: true }),
+          expect.objectContaining({ data: 'Addresses', header: true }),
+        ]),
+        expect.arrayContaining(['Immediate', 'Fix auth', 'R-001']),
+      ])
+    );
+  });
+
+  test('summary uses collapsible details for attack scenarios', async () => {
+    const { run } = require('../src/index');
+    await run();
+    expect(mockCore.summary.addDetails).toHaveBeenCalledWith(
+      'Attack Scenarios',
+      expect.stringContaining('**Test**')
+    );
   });
 
   test('always generates HTML report alongside other formats', async () => {
