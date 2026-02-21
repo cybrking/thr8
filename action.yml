@@ -38,6 +38,10 @@ inputs:
     description: 'Generate AI fix PRs for critical/immediate findings'
     default: 'false'
 
+  pr-severity:
+    description: 'Comma-separated severity levels that get fix PRs when auto-fix is enabled (e.g., critical,high,medium)'
+    default: 'critical,high'
+
 outputs:
   threats-found:
     description: 'Total vulnerabilities identified'

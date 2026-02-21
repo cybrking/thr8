@@ -44338,7 +44338,7 @@ class RemediatorAgent {
     this.context = github.context;
   }
 
-  async remediate({ threatModel, systemContext, scannedFiles, createIssues, autoFix }) {
+  async remediate({ threatModel, systemContext, scannedFiles, createIssues, autoFix, prSeverity = ['critical', 'high'] }) {
     const results = { issuesCreated: [], prsCreated: [], errors: [] };
 
     const vulns = this._extractVulnerabilities(threatModel);
@@ -44349,7 +44349,7 @@ class RemediatorAgent {
       try {
         const risk = risks[vuln.id];
         const rec = recommendations[vuln.id];
-        const route = this._classifyRoute(vuln, rec, { autoFix, createIssues });
+        const route = this._classifyRoute(vuln, rec, { autoFix, createIssues, prSeverity });
 
         if (route === 'pr') {
           const fixData = await this._generateFix(vuln, risk, rec, scannedFiles, systemContext);
@@ -44426,12 +44426,10 @@ class RemediatorAgent {
     return map;
   }
 
-  _classifyRoute(vuln, recommendation, { autoFix, createIssues }) {
+  _classifyRoute(vuln, recommendation, { autoFix, createIssues, prSeverity }) {
     const severity = (vuln.severity || '').toLowerCase();
-    const isHighSeverity = severity === 'critical' || severity === 'high';
-    const isImmediate = recommendation && recommendation.priority === 'Immediate';
 
-    if (autoFix && isHighSeverity && isImmediate) {
+    if (autoFix && prSeverity.includes(severity)) {
       return 'pr';
     }
     if (createIssues) {
@@ -45196,6 +45194,8 @@ async function run() {
     const githubToken = core.getInput('github-token');
     const createIssues = core.getInput('create-issues') === 'true';
     const autoFix = core.getInput('auto-fix') === 'true';
+    const prSeverity = core.getInput('pr-severity')
+      .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 
     // Derive project name from repo
     const repoName = process.env.GITHUB_REPOSITORY || path.basename(repoPath);
@@ -45245,6 +45245,7 @@ async function run() {
           scannedFiles: files,
           createIssues,
           autoFix,
+          prSeverity,
         });
         core.info(`Issues created: ${remediationResults.issuesCreated.length}`);
         core.info(`Fix PRs created: ${remediationResults.prsCreated.length}`);

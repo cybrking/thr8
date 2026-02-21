@@ -44,7 +44,7 @@ class RemediatorAgent {
     this.context = github.context;
   }
 
-  async remediate({ threatModel, systemContext, scannedFiles, createIssues, autoFix }) {
+  async remediate({ threatModel, systemContext, scannedFiles, createIssues, autoFix, prSeverity = ['critical', 'high'] }) {
     const results = { issuesCreated: [], prsCreated: [], errors: [] };
 
     const vulns = this._extractVulnerabilities(threatModel);
@@ -55,7 +55,7 @@ class RemediatorAgent {
       try {
         const risk = risks[vuln.id];
         const rec = recommendations[vuln.id];
-        const route = this._classifyRoute(vuln, rec, { autoFix, createIssues });
+        const route = this._classifyRoute(vuln, rec, { autoFix, createIssues, prSeverity });
 
         if (route === 'pr') {
           const fixData = await this._generateFix(vuln, risk, rec, scannedFiles, systemContext);
@@ -132,12 +132,10 @@ class RemediatorAgent {
     return map;
   }
 
-  _classifyRoute(vuln, recommendation, { autoFix, createIssues }) {
+  _classifyRoute(vuln, recommendation, { autoFix, createIssues, prSeverity }) {
     const severity = (vuln.severity || '').toLowerCase();
-    const isHighSeverity = severity === 'critical' || severity === 'high';
-    const isImmediate = recommendation && recommendation.priority === 'Immediate';
 
-    if (autoFix && isHighSeverity && isImmediate) {
+    if (autoFix && prSeverity.includes(severity)) {
       return 'pr';
     }
     if (createIssues) {

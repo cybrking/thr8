@@ -91,7 +91,7 @@ describe('RemediatorAgent', () => {
   });
 
   describe('classification', () => {
-    test('routes Critical+Immediate to PR when auto-fix enabled', async () => {
+    test('routes Critical severity to PR when auto-fix enabled', async () => {
       const agent = new RemediatorAgent('test-key', 'gh-token');
 
       await agent.remediate({
@@ -100,9 +100,10 @@ describe('RemediatorAgent', () => {
         scannedFiles,
         createIssues: true,
         autoFix: true,
+        prSeverity: ['critical', 'high'],
       });
 
-      // V-001 (Critical + Immediate) → PR
+      // V-001 (Critical) → PR
       expect(createFixPR).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
@@ -111,7 +112,7 @@ describe('RemediatorAgent', () => {
         expect.any(Object)
       );
 
-      // V-002 (Medium + Short-term) → Issue
+      // V-002 (Medium) → Issue (not in prSeverity)
       expect(createIssueIfNotExists).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
@@ -130,10 +131,77 @@ describe('RemediatorAgent', () => {
         scannedFiles,
         createIssues: true,
         autoFix: false,
+        prSeverity: ['critical', 'high'],
       });
 
       expect(createFixPR).not.toHaveBeenCalled();
       expect(createIssueIfNotExists).toHaveBeenCalledTimes(2);
+    });
+
+    test('routes to PR based on custom pr-severity', async () => {
+      const agent = new RemediatorAgent('test-key', 'gh-token');
+
+      await agent.remediate({
+        threatModel: baseThreatModel,
+        systemContext: {},
+        scannedFiles,
+        createIssues: true,
+        autoFix: true,
+        prSeverity: ['critical', 'high', 'medium'],
+      });
+
+      // V-001 (Critical) → PR
+      expect(createFixPR).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'V-001',
+        expect.any(Object),
+        expect.any(Object)
+      );
+
+      // V-002 (Medium) → also PR since medium is in prSeverity
+      expect(createFixPR).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'V-002',
+        expect.any(Object),
+        expect.any(Object)
+      );
+
+      expect(createIssueIfNotExists).not.toHaveBeenCalled();
+    });
+
+    test('only creates issues when severity not in pr-severity', async () => {
+      const agent = new RemediatorAgent('test-key', 'gh-token');
+
+      await agent.remediate({
+        threatModel: baseThreatModel,
+        systemContext: {},
+        scannedFiles,
+        createIssues: true,
+        autoFix: true,
+        prSeverity: ['critical'],
+      });
+
+      // V-001 (Critical) → PR
+      expect(createFixPR).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'V-001',
+        expect.any(Object),
+        expect.any(Object)
+      );
+      expect(createFixPR).toHaveBeenCalledTimes(1);
+
+      // V-002 (Medium) → Issue (not in prSeverity)
+      expect(createIssueIfNotExists).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ id: 'V-002' }),
+        expect.any(Object),
+        expect.any(Object)
+      );
+      expect(createIssueIfNotExists).toHaveBeenCalledTimes(1);
     });
 
     test('skips everything when both flags are false', async () => {
@@ -145,6 +213,7 @@ describe('RemediatorAgent', () => {
         scannedFiles,
         createIssues: false,
         autoFix: false,
+        prSeverity: ['critical', 'high'],
       });
 
       expect(createFixPR).not.toHaveBeenCalled();
@@ -173,6 +242,7 @@ describe('RemediatorAgent', () => {
         scannedFiles,
         createIssues: true,
         autoFix: true,
+        prSeverity: ['critical', 'high'],
       });
 
       // V-001 should fall back to issue due to low confidence
@@ -193,6 +263,7 @@ describe('RemediatorAgent', () => {
         scannedFiles,
         createIssues: true,
         autoFix: true,
+        prSeverity: ['critical', 'high'],
       });
 
       // V-001 PR failed → fell back to issue, V-002 also got an issue
@@ -221,6 +292,7 @@ describe('RemediatorAgent', () => {
         scannedFiles,
         createIssues: true,
         autoFix: true,
+        prSeverity: ['critical', 'high'],
       });
 
       const core = require('@actions/core');
@@ -259,6 +331,7 @@ describe('RemediatorAgent', () => {
         scannedFiles,
         createIssues: false,
         autoFix: true,
+        prSeverity: ['critical', 'high'],
       });
 
       // PR failed, no fallback since createIssues is false
@@ -304,6 +377,7 @@ describe('RemediatorAgent', () => {
         scannedFiles,
         createIssues: true,
         autoFix: true,
+        prSeverity: ['critical', 'high'],
       });
 
       expect(result.issuesCreated.length).toBeGreaterThanOrEqual(1);

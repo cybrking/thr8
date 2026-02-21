@@ -59,6 +59,7 @@ jobs:
 | `github-token` | No | — | GitHub token for creating issues and PRs (enables remediation) |
 | `create-issues` | No | `false` | Create GitHub Issues for medium/low findings |
 | `auto-fix` | No | `false` | Generate AI fix PRs for critical/immediate findings |
+| `pr-severity` | No | `critical,high` | Comma-separated severity levels that get fix PRs when auto-fix is enabled |
 
 ## Outputs
 
@@ -174,7 +175,8 @@ permissions:
 | Flag | What happens |
 |------|-------------|
 | `create-issues: 'true'` | Creates a GitHub Issue for every finding that isn't handled by a fix PR. Issues include severity labels (`threat-model`, `severity:high`, etc.), business impact, and recommended action. |
-| `auto-fix: 'true'` | For **Critical/High severity** findings with an **Immediate** recommendation, Claude generates a minimal targeted code fix and opens a PR on a `thr8/fix-{vuln-id}` branch. If the fix has low confidence, it falls back to creating an issue instead. |
+| `auto-fix: 'true'` | For findings whose severity is in the `pr-severity` list, Claude generates a minimal targeted code fix and opens a PR on a `thr8/fix-{vuln-id}` branch. If the fix has low confidence, it falls back to creating an issue instead. |
+| `pr-severity: 'critical,high'` | Controls which severity levels get fix PRs (default: `critical,high`). Set to `critical,high,medium` to also auto-fix medium findings, or `critical` to limit PRs to only critical vulnerabilities. |
 
 Both flags require `github-token` to be set. Without a token, remediation is skipped entirely (the action still generates reports as usual).
 
@@ -187,7 +189,7 @@ Re-running the action does **not** create duplicates. Each issue and PR body con
 ```
 For each vulnerability found:
 
-  Is auto-fix enabled AND severity is Critical/High AND recommendation is Immediate?
+  Is auto-fix enabled AND severity is in pr-severity list?
     ├─ YES → Generate fix with Claude
     │         ├─ High/medium confidence → Open fix PR
     │         └─ Low confidence → Fall back to issue (if create-issues enabled)
@@ -263,6 +265,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           create-issues: 'true'
           auto-fix: 'true'
+          pr-severity: 'critical,high'
 
       - name: Remediation Summary
         run: |

@@ -15,6 +15,8 @@ async function run() {
     const githubToken = core.getInput('github-token');
     const createIssues = core.getInput('create-issues') === 'true';
     const autoFix = core.getInput('auto-fix') === 'true';
+    const prSeverity = core.getInput('pr-severity')
+      .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 
     // Derive project name from repo
     const repoName = process.env.GITHUB_REPOSITORY || path.basename(repoPath);
@@ -64,6 +66,7 @@ async function run() {
           scannedFiles: files,
           createIssues,
           autoFix,
+          prSeverity,
         });
         core.info(`Issues created: ${remediationResults.issuesCreated.length}`);
         core.info(`Fix PRs created: ${remediationResults.prsCreated.length}`);
