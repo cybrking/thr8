@@ -182,7 +182,7 @@ describe('RemediatorAgent', () => {
   });
 
   describe('error handling', () => {
-    test('continues on per-vuln failure', async () => {
+    test('continues on per-vuln failure and falls back to issue', async () => {
       createFixPR.mockRejectedValueOnce(new Error('API error'));
 
       const agent = new RemediatorAgent('test-key', 'gh-token');
@@ -195,10 +195,77 @@ describe('RemediatorAgent', () => {
         autoFix: true,
       });
 
-      // V-001 failed, V-002 should still have been processed
-      expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].vulnId).toBe('V-001');
-      expect(createIssueIfNotExists).toHaveBeenCalled();
+      // V-001 PR failed → fell back to issue, V-002 also got an issue
+      expect(result.errors).toHaveLength(0);
+      expect(createIssueIfNotExists).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ id: 'V-001' }),
+        expect.any(Object),
+        expect.any(Object)
+      );
+      // V-001 fallback issue + V-002 normal issue
+      expect(result.issuesCreated).toHaveLength(2);
+    });
+
+    test('falls back to issue when PR creation is denied', async () => {
+      createFixPR.mockRejectedValueOnce(
+        new Error('GitHub Actions is not permitted to create or approve pull requests')
+      );
+
+      const agent = new RemediatorAgent('test-key', 'gh-token');
+
+      const result = await agent.remediate({
+        threatModel: baseThreatModel,
+        systemContext: {},
+        scannedFiles,
+        createIssues: true,
+        autoFix: true,
+      });
+
+      const core = require('@actions/core');
+
+      // PR creation was attempted and failed
+      expect(createFixPR).toHaveBeenCalledTimes(1);
+      // Warning logged about PR failure
+      expect(core.warning).toHaveBeenCalledWith(
+        expect.stringContaining('PR creation failed for V-001')
+      );
+      // Fallback info logged
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('Falling back to issue for V-001')
+      );
+      // Issue created as fallback for V-001
+      expect(createIssueIfNotExists).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ id: 'V-001' }),
+        expect.any(Object),
+        expect.any(Object)
+      );
+      // No errors recorded — fallback handled it gracefully
+      expect(result.errors).toHaveLength(0);
+      expect(result.issuesCreated).toHaveLength(2);
+    });
+
+    test('PR failure without createIssues does not fallback', async () => {
+      createFixPR.mockRejectedValueOnce(new Error('PR denied'));
+
+      const agent = new RemediatorAgent('test-key', 'gh-token');
+
+      const result = await agent.remediate({
+        threatModel: baseThreatModel,
+        systemContext: {},
+        scannedFiles,
+        createIssues: false,
+        autoFix: true,
+      });
+
+      // PR failed, no fallback since createIssues is false
+      expect(createFixPR).toHaveBeenCalledTimes(1);
+      expect(createIssueIfNotExists).not.toHaveBeenCalled();
+      expect(result.errors).toHaveLength(0);
+      expect(result.issuesCreated).toHaveLength(0);
     });
   });
 

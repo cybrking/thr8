@@ -167,6 +167,8 @@ permissions:
   issues: write         # create issues and labels
 ```
 
+> **Repository setting**: If using `auto-fix`, you must also enable **"Allow GitHub Actions to create and approve pull requests"** in your repo under **Settings → Actions → General → Workflow permissions**. If this setting is off, the action falls back to creating issues instead.
+
 ### What each flag does
 
 | Flag | What happens |

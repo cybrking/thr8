@@ -67,8 +67,17 @@ class RemediatorAgent {
             }
             continue;
           }
-          const result = await createFixPR(this.octokit, this.context, vuln.id, fixData, risk);
-          if (result.created) results.prsCreated.push(result.pr);
+          try {
+            const result = await createFixPR(this.octokit, this.context, vuln.id, fixData, risk);
+            if (result.created) results.prsCreated.push(result.pr);
+          } catch (prError) {
+            core.warning(`[thr8] PR creation failed for ${vuln.id}: ${prError.message}`);
+            if (createIssues) {
+              core.info(`[thr8] Falling back to issue for ${vuln.id}`);
+              const fallback = await createIssueIfNotExists(this.octokit, this.context, vuln, risk, rec);
+              if (fallback.created) results.issuesCreated.push(fallback.issue);
+            }
+          }
         } else if (route === 'issue') {
           const result = await createIssueIfNotExists(this.octokit, this.context, vuln, risk, rec);
           if (result.created) results.issuesCreated.push(result.issue);
