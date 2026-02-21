@@ -19,6 +19,33 @@ const mockCore = {
 };
 jest.mock('@actions/core', () => mockCore);
 
+jest.mock('@actions/github', () => ({
+  getOctokit: jest.fn(() => ({
+    rest: {
+      search: { issuesAndPullRequests: jest.fn().mockResolvedValue({ data: { items: [] } }) },
+      issues: {
+        getLabel: jest.fn().mockResolvedValue({}),
+        create: jest.fn().mockResolvedValue({ data: { number: 1, title: 'test', html_url: 'https://github.com/test/1' } }),
+        listForRepo: jest.fn().mockResolvedValue({ data: [] }),
+      },
+      pulls: {
+        list: jest.fn().mockResolvedValue({ data: [] }),
+        create: jest.fn().mockResolvedValue({ data: { number: 2, title: 'fix', html_url: 'https://github.com/test/pull/2' } }),
+      },
+      repos: {
+        get: jest.fn().mockResolvedValue({ data: { default_branch: 'main' } }),
+        getContent: jest.fn().mockResolvedValue({ data: { sha: 'abc' } }),
+        createOrUpdateFileContents: jest.fn().mockResolvedValue({}),
+      },
+      git: {
+        getRef: jest.fn().mockResolvedValue({ data: { object: { sha: 'sha123' } } }),
+        createRef: jest.fn().mockResolvedValue({}),
+      },
+    },
+  })),
+  context: { repo: { owner: 'cybrking', repo: 'test-project' } },
+}));
+
 // Prevent Chrome launch during tests
 jest.mock('../src/utils/chrome-finder', () => ({
   findChrome: jest.fn(() => null),
@@ -58,12 +85,22 @@ jest.mock('@anthropic-ai/sdk', () => {
               overall_risk_status: 'MEDIUM',
               attack_surfaces: [{
                 name: 'API', vector: 'HTTP', weakness: 'No auth',
-                vulnerabilities: [{ id: 'V-001', title: 'Test', description: 'Test', severity: 'Medium' }]
+                vulnerabilities: [{ id: 'V-001', title: 'Test Vuln', description: 'Test', severity: 'Medium' }]
               }],
               attack_scenarios: [{ name: 'Test', objective: 'Test', steps: [{ phase: 'Exploitation', action: 'Test', exploits: ['V-001'] }] }],
               risk_analysis: [{ risk_id: 'R-001', title: 'Test', pasta_level: 'Medium', business_impact: 'Test', mitigation_complexity: 'Low', linked_vulnerabilities: ['V-001'] }],
               tactical_recommendations: [{ priority: 'Immediate', action: 'Fix auth', addresses: ['R-001'] }],
               summary: { total_vulnerabilities: 1, critical: 0, high: 0, medium: 1, low: 0, attack_scenarios: 1, attack_surfaces: 1 }
+            })}],
+            stop_reason: 'end_turn'
+          });
+        }
+        if (system.includes('security engineer')) {
+          return Promise.resolve({
+            content: [{ type: 'text', text: JSON.stringify({
+              confidence: 'high',
+              explanation: 'Added input validation',
+              files: [{ path: 'src/app.js', original_content: 'old', fixed_content: 'new' }],
             })}],
             stop_reason: 'end_turn'
           });
@@ -85,6 +122,9 @@ describe('Main Orchestrator', () => {
       'anthropic-api-key': 'test-api-key',
       'output-formats': 'markdown,json',
       'fail-on-high-risk': 'false',
+      'github-token': '',
+      'create-issues': 'false',
+      'auto-fix': 'false',
     }[name] || ''));
   });
 
@@ -105,6 +145,13 @@ describe('Main Orchestrator', () => {
     expect(mockCore.setOutput).toHaveBeenCalledWith('threats-found', expect.any(Number));
     expect(mockCore.setOutput).toHaveBeenCalledWith('high-risk-count', expect.any(Number));
     expect(mockCore.setOutput).toHaveBeenCalledWith('report-path', expect.any(String));
+  });
+
+  test('sets remediation outputs', async () => {
+    const { run } = require('../src/index');
+    await run();
+    expect(mockCore.setOutput).toHaveBeenCalledWith('issues-created', expect.any(Number));
+    expect(mockCore.setOutput).toHaveBeenCalledWith('prs-created', expect.any(Number));
   });
 
   test('logs files scanned count', async () => {
@@ -148,5 +195,44 @@ describe('Main Orchestrator', () => {
     const { run } = require('../src/index');
     await run();
     expect(mockCore.info).toHaveBeenCalledWith(expect.stringContaining('HTML report generated'));
+  });
+
+  test('skips remediation when github-token is empty', async () => {
+    const { run } = require('../src/index');
+    await run();
+    // Should not start the remediation group
+    expect(mockCore.startGroup).not.toHaveBeenCalledWith('Running automated remediation...');
+  });
+
+  test('runs remediation when create-issues is true', async () => {
+    mockCore.getInput.mockImplementation((name) => ({
+      'anthropic-api-key': 'test-api-key',
+      'output-formats': 'markdown,json',
+      'fail-on-high-risk': 'false',
+      'github-token': 'ghp_test123',
+      'create-issues': 'true',
+      'auto-fix': 'false',
+    }[name] || ''));
+
+    const { run } = require('../src/index');
+    await run();
+    expect(mockCore.startGroup).toHaveBeenCalledWith('Running automated remediation...');
+    expect(mockCore.info).toHaveBeenCalledWith(expect.stringContaining('Issues created:'));
+  });
+
+  test('runs remediation with auto-fix', async () => {
+    mockCore.getInput.mockImplementation((name) => ({
+      'anthropic-api-key': 'test-api-key',
+      'output-formats': 'markdown,json',
+      'fail-on-high-risk': 'false',
+      'github-token': 'ghp_test123',
+      'create-issues': 'true',
+      'auto-fix': 'true',
+    }[name] || ''));
+
+    const { run } = require('../src/index');
+    await run();
+    expect(mockCore.startGroup).toHaveBeenCalledWith('Running automated remediation...');
+    expect(mockCore.info).toHaveBeenCalledWith(expect.stringContaining('Fix PRs created:'));
   });
 });

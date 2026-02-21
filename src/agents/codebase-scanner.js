@@ -243,6 +243,7 @@ ${filesSummary}`
         systemContext: result.system_context || {},
         dataFlows: result.data_flows || { flows: [] },
         filesScanned: files.length,
+        files,
       };
     } catch (error) {
       console.error('Codebase scan failed:', error.message);
@@ -250,6 +251,7 @@ ${filesSummary}`
         systemContext: {},
         dataFlows: { flows: [] },
         filesScanned: files.length,
+        files: [],
       };
     }
   }

@@ -11,6 +11,7 @@ A GitHub Action that automatically generates PASTA (Process for Attack Simulatio
 - **API surface mapping** — Discovers endpoints, authentication requirements, and sensitive data handling
 - **PASTA threat modeling** — Full 7-stage framework: business objectives, attack surfaces, kill chains, and risk analysis
 - **Multiple output formats** — Markdown (with Mermaid diagrams), JSON, HTML, and optional PDF
+- **Automated remediation** — Creates GitHub Issues for findings and AI-generated fix PRs for critical vulnerabilities
 - **CI/CD integration** — Fail builds on critical-risk findings, upload reports as artifacts
 
 ## Quick Start
@@ -25,13 +26,20 @@ on:
 jobs:
   threat-model:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     steps:
       - uses: actions/checkout@v4
 
       - name: Generate Threat Model
-        uses: cybrking/thr8@v1.0.0.0
+        uses: cybrking/thr8@v1.1.0
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          create-issues: 'true'
+          auto-fix: 'true'
 
       - name: Upload Report
         uses: actions/upload-artifact@v4
@@ -48,6 +56,9 @@ jobs:
 | `output-formats` | No | `markdown,json,html` | Comma-separated output formats (`markdown`, `json`, `html`, `pdf`) |
 | `fail-on-high-risk` | No | `false` | Fail the build if critical-risk vulnerabilities are found |
 | `config-path` | No | `.threat-model.yml` | Path to optional configuration file |
+| `github-token` | No | — | GitHub token for creating issues and PRs (enables remediation) |
+| `create-issues` | No | `false` | Create GitHub Issues for medium/low findings |
+| `auto-fix` | No | `false` | Generate AI fix PRs for critical/immediate findings |
 
 ## Outputs
 
@@ -56,22 +67,24 @@ jobs:
 | `threats-found` | Total number of vulnerabilities identified |
 | `high-risk-count` | Number of critical-risk vulnerabilities |
 | `report-path` | Path to the generated report directory |
+| `issues-created` | Number of GitHub Issues created |
+| `prs-created` | Number of fix PRs created |
 
 ## How It Works
 
-The action runs a 3-stage pipeline:
+The action runs a 4-stage pipeline:
 
 ```
-  Discovery (Static)           Reasoning (Claude AI)           Output
-┌─────────────────────┐      ┌──────────────────────┐      ┌──────────┐
-│                     │      │ Business Objectives   │      │ Markdown │
-│  Codebase Scanner   │─────>│ Attack Surfaces       │─────>│ JSON     │
-│                     │      │ Kill Chain Scenarios   │      │ HTML     │
-│ • Tech stack        │      │ Risk Analysis         │      │ PDF      │
-│ • Infrastructure    │      │ Recommendations       │      │          │
-│ • API endpoints     │      │                       │      │          │
-│ • Data flows        │      │ (3 focused API calls)  │      │          │
-└─────────────────────┘      └──────────────────────┘      └──────────┘
+  Discovery (Static)           Reasoning (Claude AI)           Output            Remediation
+┌─────────────────────┐      ┌──────────────────────┐      ┌──────────┐      ┌──────────────┐
+│                     │      │ Business Objectives   │      │ Markdown │      │ GitHub Issues│
+│  Codebase Scanner   │─────>│ Attack Surfaces       │─────>│ JSON     │─────>│ Fix PRs      │
+│                     │      │ Kill Chain Scenarios   │      │ HTML     │      │              │
+│ • Tech stack        │      │ Risk Analysis         │      │ PDF      │      │ (optional)   │
+│ • Infrastructure    │      │ Recommendations       │      │          │      │              │
+│ • API endpoints     │      │                       │      │          │      │              │
+│ • Data flows        │      │ (3 focused API calls)  │      │          │      │              │
+└─────────────────────┘      └──────────────────────┘      └──────────┘      └──────────────┘
 ```
 
 **Stage 1 — Discovery** scans your repository using static analysis (no API calls) to collect tech stack, infrastructure, API endpoints, and data flow context.
@@ -79,6 +92,8 @@ The action runs a 3-stage pipeline:
 **Stage 2 — Reasoning** sends the collected context to Claude for PASTA analysis: identifying business objectives, mapping attack surfaces, generating realistic attack scenarios (kill chains), and scoring risks.
 
 **Stage 3 — Output** renders the analysis into your chosen formats using Handlebars templates with Mermaid diagrams for data flow visualization.
+
+**Stage 4 — Remediation** (optional) automatically creates GitHub Issues for findings and AI-generated fix PRs for critical vulnerabilities. See [Automated Remediation](#automated-remediation) below.
 
 ## PASTA Framework Coverage
 
@@ -125,13 +140,91 @@ Professional stakeholder-facing report with sidebar navigation, executive summar
 ### PDF (`THREAT_MODEL.pdf`)
 Generated from the HTML report via headless Chrome. Requires Chrome/Chromium on the runner — gracefully skips if unavailable.
 
+## Automated Remediation
+
+When you provide a `github-token`, the action can automatically act on its findings instead of just reporting them.
+
+### How to enable
+
+Add three inputs to your workflow step:
+
+```yaml
+- name: Generate Threat Model
+  uses: cybrking/thr8@v1.1.0
+  with:
+    anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    create-issues: 'true'
+    auto-fix: 'true'
+```
+
+Your job also needs these permissions:
+
+```yaml
+permissions:
+  contents: write       # create branches and commit fixes
+  pull-requests: write  # open fix PRs
+  issues: write         # create issues and labels
+```
+
+### What each flag does
+
+| Flag | What happens |
+|------|-------------|
+| `create-issues: 'true'` | Creates a GitHub Issue for every finding that isn't handled by a fix PR. Issues include severity labels (`threat-model`, `severity:high`, etc.), business impact, and recommended action. |
+| `auto-fix: 'true'` | For **Critical/High severity** findings with an **Immediate** recommendation, Claude generates a minimal targeted code fix and opens a PR on a `thr8/fix-{vuln-id}` branch. If the fix has low confidence, it falls back to creating an issue instead. |
+
+Both flags require `github-token` to be set. Without a token, remediation is skipped entirely (the action still generates reports as usual).
+
+### Deduplication
+
+Re-running the action does **not** create duplicates. Each issue and PR body contains a hidden marker (`<!-- thr8:V-001 -->`) that is checked before creating anything new.
+
+### Routing logic
+
+```
+For each vulnerability found:
+
+  Is auto-fix enabled AND severity is Critical/High AND recommendation is Immediate?
+    ├─ YES → Generate fix with Claude
+    │         ├─ High/medium confidence → Open fix PR
+    │         └─ Low confidence → Fall back to issue (if create-issues enabled)
+    └─ NO  → Create GitHub Issue (if create-issues enabled)
+```
+
+### Issue format
+
+Issues are created with the title `[thr8] {vulnerability title} ({severity})` and labeled `threat-model` + `severity:{level}`. The body includes:
+- Severity and risk level
+- Business impact assessment
+- Recommended remediation action
+
+### PR format
+
+Fix PRs are created on a `thr8/fix-{vuln-id}` branch with:
+- The minimal code change needed to address the vulnerability
+- An explanation of what was fixed
+- Risk context (severity, business impact)
+- A list of changed files
+
+### Issues-only mode
+
+If you want tracking without automated code changes, enable only issues:
+
+```yaml
+with:
+  github-token: ${{ secrets.GITHUB_TOKEN }}
+  create-issues: 'true'
+  auto-fix: 'false'     # no PRs, just issues
+```
+
 ## Examples
 
 ### Fail build on critical findings
 
 ```yaml
 - name: Generate Threat Model
-  uses: cybrking/thr8@v1.0.0.0
+  uses: cybrking/thr8@v1.1.0
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     fail-on-high-risk: 'true'
@@ -141,10 +234,38 @@ Generated from the HTML report via headless Chrome. Requires Chrome/Chromium on 
 
 ```yaml
 - name: Generate Threat Model
-  uses: cybrking/thr8@v1.0.0.0
+  uses: cybrking/thr8@v1.1.0
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     output-formats: 'json'
+```
+
+### Auto-remediate findings
+
+```yaml
+jobs:
+  threat-model:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Threat Model
+        id: threat-model
+        uses: cybrking/thr8@v1.1.0
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          create-issues: 'true'
+          auto-fix: 'true'
+
+      - name: Remediation Summary
+        run: |
+          echo "Issues created: ${{ steps.threat-model.outputs.issues-created }}"
+          echo "Fix PRs created: ${{ steps.threat-model.outputs.prs-created }}"
 ```
 
 ### Post summary as PR comment
@@ -152,7 +273,7 @@ Generated from the HTML report via headless Chrome. Requires Chrome/Chromium on 
 ```yaml
 - name: Generate Threat Model
   id: threat-model
-  uses: cybrking/thr8@v1.0.0.0
+  uses: cybrking/thr8@v1.1.0
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
@@ -186,11 +307,13 @@ The codebase scanner automatically detects:
 
 ## Cost
 
-The action makes **3 Claude API calls** per run using `claude-sonnet-4-6`:
+The action makes **3 Claude API calls** per run using `claude-sonnet-4-6` for threat analysis:
 
 - Typical input: ~2–5K tokens per call
 - Typical output: ~3–8K tokens per call
-- **Estimated cost: $0.05–0.15 per run**
+- **Estimated cost: $0.05–0.15 per run** (analysis only)
+
+With `auto-fix` enabled, an additional API call is made per critical/high vulnerability to generate fix code. Each fix call uses ~2–4K input tokens and ~2–4K output tokens. For a typical repo with 1–3 critical findings, this adds ~$0.02–0.06 per run.
 
 ## Development
 

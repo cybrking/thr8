@@ -4,6 +4,7 @@ const path = require('path');
 const CodebaseScannerAgent = require('./agents/codebase-scanner');
 const ThreatGeneratorAgent = require('./agents/threat-generator');
 const ReporterAgent = require('./agents/reporter');
+const RemediatorAgent = require('./agents/remediator');
 
 async function run() {
   try {
@@ -11,13 +12,16 @@ async function run() {
     const apiKey = core.getInput('anthropic-api-key', { required: true });
     const outputFormats = core.getInput('output-formats').split(',').map(s => s.trim()).filter(Boolean);
     const failOnHighRisk = core.getInput('fail-on-high-risk') === 'true';
+    const githubToken = core.getInput('github-token');
+    const createIssues = core.getInput('create-issues') === 'true';
+    const autoFix = core.getInput('auto-fix') === 'true';
 
     // Derive project name from repo
     const repoName = process.env.GITHUB_REPOSITORY || path.basename(repoPath);
 
     // Step 1: Scan codebase + map data flows (PASTA Stage 3)
     core.startGroup('Scanning codebase...');
-    const { systemContext, dataFlows, filesScanned } = await new CodebaseScannerAgent(apiKey).analyze(repoPath);
+    const { systemContext, dataFlows, filesScanned, files } = await new CodebaseScannerAgent(apiKey).analyze(repoPath);
     core.info(`Scanned ${filesScanned} files`);
     core.endGroup();
 
@@ -48,7 +52,31 @@ async function run() {
     core.info('Tip: Use actions/upload-artifact to persist HTML/PDF reports as workflow artifacts.');
     core.endGroup();
 
-    // Step 4: Set outputs
+    // Step 4: Automated remediation
+    let remediationResults = null;
+    if (githubToken && (createIssues || autoFix)) {
+      core.startGroup('Running automated remediation...');
+      try {
+        const remediator = new RemediatorAgent(apiKey, githubToken);
+        remediationResults = await remediator.remediate({
+          threatModel,
+          systemContext,
+          scannedFiles: files,
+          createIssues,
+          autoFix,
+        });
+        core.info(`Issues created: ${remediationResults.issuesCreated.length}`);
+        core.info(`Fix PRs created: ${remediationResults.prsCreated.length}`);
+        if (remediationResults.errors.length > 0) {
+          core.warning(`Remediation errors: ${remediationResults.errors.length}`);
+        }
+      } catch (error) {
+        core.warning(`Remediation failed: ${error.message}`);
+      }
+      core.endGroup();
+    }
+
+    // Step 5: Set outputs
     const totalVulns = threatModel.summary?.total_vulnerabilities || 0;
     const criticalCount = threatModel.summary?.critical || 0;
     const riskStatus = threatModel.overall_risk_status || 'UNKNOWN';
@@ -56,12 +84,10 @@ async function run() {
     core.setOutput('threats-found', totalVulns);
     core.setOutput('high-risk-count', criticalCount);
     core.setOutput('report-path', outputDir);
+    core.setOutput('issues-created', remediationResults ? remediationResults.issuesCreated.length : 0);
+    core.setOutput('prs-created', remediationResults ? remediationResults.prsCreated.length : 0);
 
-    // Step 5: Job summary
-    const highCount = threatModel.summary?.high || 0;
-    const mediumCount = threatModel.summary?.medium || 0;
-    const lowCount = threatModel.summary?.low || 0;
-
+    // Step 6: Job summary
     const riskOrder = { Critical: 0, High: 1, Medium: 2, Low: 3 };
     const priorityOrder = { Immediate: 0, 'Short-term': 1 };
 
@@ -115,9 +141,36 @@ async function run() {
       core.summary.addDetails('Attack Scenarios', scenarioTable);
     }
 
+    // Section 5 — Automated Remediation
+    if (remediationResults) {
+      const prLinks = remediationResults.prsCreated.map(pr =>
+        `- [${pr.title}](${pr.html_url})`
+      ).join('\n');
+      const issueLinks = remediationResults.issuesCreated.map(issue =>
+        `- [${issue.title}](${issue.html_url})`
+      ).join('\n');
+
+      let remediationSummary = '';
+      if (remediationResults.prsCreated.length > 0) {
+        remediationSummary += `**Fix PRs:** ${remediationResults.prsCreated.length}\n${prLinks}\n\n`;
+      }
+      if (remediationResults.issuesCreated.length > 0) {
+        remediationSummary += `**Issues:** ${remediationResults.issuesCreated.length}\n${issueLinks}\n\n`;
+      }
+      if (remediationResults.errors.length > 0) {
+        remediationSummary += `**Errors:** ${remediationResults.errors.length} vulnerabilities could not be remediated\n`;
+      }
+
+      if (remediationSummary) {
+        core.summary
+          .addHeading('Automated Remediation', 3)
+          .addRaw(remediationSummary);
+      }
+    }
+
     await core.summary.write();
 
-    // Step 6: Fail if needed
+    // Step 7: Fail if needed
     if (failOnHighRisk && criticalCount > 0) {
       core.setFailed(`Found ${criticalCount} critical-risk vulnerabilities`);
     }

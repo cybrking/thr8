@@ -26,6 +26,18 @@ inputs:
     required: false
     default: 'false'
 
+  github-token:
+    description: 'GitHub token for creating issues and PRs'
+    required: false
+
+  create-issues:
+    description: 'Create GitHub issues for medium/low findings'
+    default: 'false'
+
+  auto-fix:
+    description: 'Generate AI fix PRs for critical/immediate findings'
+    default: 'false'
+
 outputs:
   threats-found:
     description: 'Total vulnerabilities identified'
@@ -33,6 +45,10 @@ outputs:
     description: 'Critical-risk vulnerabilities'
   report-path:
     description: 'Path to generated report'
+  issues-created:
+    description: 'Number of issues created'
+  prs-created:
+    description: 'Number of fix PRs created'
 
 runs:
   using: 'node20'
