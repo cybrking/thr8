@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Generate Threat Model
-        uses: cybrking/thr8@v1.1.0
+        uses: cybrking/thr8@v1
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -151,7 +151,7 @@ Add three inputs to your workflow step:
 
 ```yaml
 - name: Generate Threat Model
-  uses: cybrking/thr8@v1.1.0
+  uses: cybrking/thr8@v1
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -228,7 +228,7 @@ with:
 
 ```yaml
 - name: Generate Threat Model
-  uses: cybrking/thr8@v1.1.0
+  uses: cybrking/thr8@v1
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     fail-on-high-risk: 'true'
@@ -238,7 +238,7 @@ with:
 
 ```yaml
 - name: Generate Threat Model
-  uses: cybrking/thr8@v1.1.0
+  uses: cybrking/thr8@v1
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     output-formats: 'json'
@@ -259,7 +259,7 @@ jobs:
 
       - name: Generate Threat Model
         id: threat-model
-        uses: cybrking/thr8@v1.1.0
+        uses: cybrking/thr8@v1
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -278,7 +278,7 @@ jobs:
 ```yaml
 - name: Generate Threat Model
   id: threat-model
-  uses: cybrking/thr8@v1.1.0
+  uses: cybrking/thr8@v1
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
