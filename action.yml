@@ -42,6 +42,10 @@ inputs:
     description: 'Comma-separated severity levels that get fix PRs when auto-fix is enabled (e.g., critical,high,medium)'
     default: 'critical,high'
 
+  security-findings:
+    description: 'Path to a markdown file containing security review findings (e.g. output from Claude security-review skill). Injected into threat analysis as high-confidence, code-level evidence.'
+    required: false
+
 outputs:
   threats-found:
     description: 'Total vulnerabilities identified'

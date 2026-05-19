@@ -1,4 +1,5 @@
 const core = require('@actions/core');
+const fs = require('fs');
 const path = require('path');
 
 const CodebaseScannerAgent = require('./agents/codebase-scanner');
@@ -18,6 +19,21 @@ async function run() {
     const prSeverity = core.getInput('pr-severity')
       .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 
+    // Optional: external security review findings to enrich threat analysis
+    let externalFindings = null;
+    const findingsPath = core.getInput('security-findings');
+    if (findingsPath) {
+      const resolvedPath = path.isAbsolute(findingsPath)
+        ? findingsPath
+        : path.join(repoPath, findingsPath);
+      try {
+        externalFindings = fs.readFileSync(resolvedPath, 'utf8');
+        core.info(`Loaded security findings from: ${resolvedPath}`);
+      } catch (err) {
+        core.warning(`Could not read security-findings file "${resolvedPath}": ${err.message}`);
+      }
+    }
+
     // Derive project name from repo
     const repoName = process.env.GITHUB_REPOSITORY || path.basename(repoPath);
 
@@ -30,7 +46,7 @@ async function run() {
     // Step 2: PASTA threat analysis (Stages 1-2, 4-7)
     core.startGroup('Generating PASTA threat analysis...');
     const threatModel = await new ThreatGeneratorAgent(apiKey).generate({
-      systemContext, dataFlows,
+      systemContext, dataFlows, externalFindings,
     });
     core.endGroup();
 

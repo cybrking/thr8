@@ -23,7 +23,7 @@ class ThreatGeneratorAgent {
     return patterns;
   }
 
-  async generate(context) {
+  async generate({ systemContext, dataFlows, externalFindings = null } = {}) {
     const patterns = this._loadPatterns();
 
     const systemPrompt = `You are a senior security engineer performing a PASTA (Process for Attack Simulation and Threat Analysis) assessment. Analyze the system and produce a complete risk-centric threat model covering all PASTA Stages (1-2, 4-7).
@@ -114,13 +114,23 @@ Tactical recommendations: Provide specific, actionable steps ordered by priority
         system: systemPrompt,
         messages: [{
           role: 'user',
-          content: `Perform PASTA threat analysis for this system:
-
-System Context:
-${JSON.stringify(context, null, 2)}
-
-Attack Pattern Reference:
-${JSON.stringify(patterns, null, 2)}`
+          content: [
+          'Perform PASTA threat analysis for this system:',
+          '',
+          'System Context:',
+          JSON.stringify({ systemContext, dataFlows }, null, 2),
+          '',
+          'Attack Pattern Reference:',
+          JSON.stringify(patterns, null, 2),
+          ...(externalFindings ? [
+            '',
+            '## Security Review Findings',
+            'The following findings were produced by an automated security review of the codebase.',
+            'Use them as high-confidence, code-level evidence when populating attack_surfaces and risk_analysis.',
+            '',
+            externalFindings,
+          ] : []),
+        ].join('\n')
         }],
       };
 
