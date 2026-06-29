@@ -10,7 +10,7 @@
   "dependencies": {
     "@actions/core": "^1.11.1",
     "@actions/github": "^6.0.1",
-    "@anthropic-ai/sdk": "^0.105.0",
+    "@anthropic-ai/sdk": "^0.107.0",
     "handlebars": "^4.7.9",
     "js-yaml": "^4.2.0",
     "puppeteer-core": "^24.43.1"
