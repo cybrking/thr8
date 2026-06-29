@@ -13,7 +13,7 @@
     "@anthropic-ai/sdk": "^0.107.0",
     "handlebars": "^4.7.9",
     "js-yaml": "^4.2.0",
-    "puppeteer-core": "^24.43.1"
+    "puppeteer-core": "^25.2.1"
   },
   "devDependencies": {
     "@vercel/ncc": "^0.38.1",
