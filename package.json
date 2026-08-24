@@ -8,8 +8,8 @@
     "build": "ncc build src/index.js -o dist -e puppeteer-core"
   },
   "dependencies": {
-    "@actions/core": "^1.11.1",
-    "@actions/github": "^6.0.1",
+    "@actions/core": "^3.0.1",
+    "@actions/github": "^9.1.1",
     "@anthropic-ai/sdk": "^0.120.0",
     "handlebars": "^4.7.9",
     "js-yaml": "^4.3.1",
