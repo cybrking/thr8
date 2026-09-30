@@ -1,0 +1,10 @@
+{
+  "name": "thr8-tools",
+  "metadata": { "description": "Claude Code security context and change threat review tools" },
+  "owner": { "name": "cybrking" },
+  "plugins": [{
+    "name": "thr8",
+    "source": "./plugins/thr8",
+    "description": "Reviewed repository security context and feature change threat reviews"
+  }]
+}

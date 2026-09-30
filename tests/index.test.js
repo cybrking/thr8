@@ -236,3 +236,48 @@ describe('Main Orchestrator', () => {
     expect(mockCore.info).toHaveBeenCalledWith(expect.stringContaining('Fix PRs created:'));
   });
 });
+
+
+describe('Assessment failures and incomplete coverage', () => {
+  const fs = require('fs');
+  const os = require('os');
+  let repo;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), 'thr8-action-'));
+    process.env.GITHUB_WORKSPACE = repo;
+    mockCore.getInput.mockImplementation(name => ({
+      'anthropic-api-key': 'test-api-key', 'output-formats': 'markdown,json',
+      'github-token': 'test-token', 'auto-fix': 'true', 'create-issues': 'true',
+    }[name] || ''));
+  });
+  afterEach(() => {
+    delete process.env.GITHUB_WORKSPACE;
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+  test('fails an empty scan without publishing a zero threat count', async () => {
+    await require('../src/index').run();
+    expect(mockCore.setOutput).toHaveBeenCalledWith('assessment-status', 'failed');
+    expect(mockCore.setOutput).not.toHaveBeenCalledWith('threats-found', 0);
+    expect(mockCore.setFailed).toHaveBeenCalled();
+  });
+  test('writes coverage reports but blocks remediation and fails when source is truncated', async () => {
+    fs.writeFileSync(path.join(repo, 'route.js'), 'x'.repeat(9000));
+    await require('../src/index').run();
+    expect(mockCore.setOutput).toHaveBeenCalledWith('assessment-status', 'incomplete');
+    expect(mockCore.startGroup).not.toHaveBeenCalledWith('Running automated remediation...');
+    expect(mockCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('incomplete'));
+    const report = JSON.parse(fs.readFileSync(path.join(repo, 'threat-model/threat-model.json')));
+    expect(report.threatModel.assessment.coverage.omissions).toContainEqual(expect.stringContaining('Truncated source'));
+  });
+  test('rejects unsupported citations in feature reviews instead of issuing remediation', async () => {
+    fs.writeFileSync(path.join(repo, 'route.js'), 'return workspaceUsers;');
+    fs.writeFileSync(path.join(repo, 'feature.md'), 'Allow guests to mention participants');
+    const previous = mockCore.getInput.getMockImplementation();
+    mockCore.getInput.mockImplementation(name => name === 'feature-spec' ? 'feature.md' : previous(name));
+    await require('../src/index').run();
+    expect(mockCore.setOutput).toHaveBeenCalledWith('assessment-status', 'failed');
+    expect(mockCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('missing attacker_prerequisites'));
+    expect(mockCore.startGroup).not.toHaveBeenCalledWith('Running automated remediation...');
+  });
+});

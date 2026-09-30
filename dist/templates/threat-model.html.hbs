@@ -517,6 +517,15 @@
 </style>
 </head>
 <body>
+{{#if threatModel.assessment}}
+<section class="section">
+<h2>Assessment: {{threatModel.assessment.status}}</h2>
+<p>Within declared scope: {{threatModel.assessment.coverage.scope}}</p>
+<p>{{threatModel.assessment.coverage.filesIncluded}} / {{threatModel.assessment.coverage.filesDiscovered}} discovered files included.</p>
+<p>Mode: {{threatModel.assessment.mode}}; base: {{threatModel.assessment.base_commit}}; head: {{threatModel.assessment.head_commit}}</p>
+<ul>{{#each threatModel.assessment.coverage.omissions}}<li>{{this}}</li>{{/each}}</ul>
+</section>
+{{/if}}
 
 <!-- Sidebar Navigation -->
 <aside class="sidebar">
@@ -674,6 +683,16 @@
         <span class="severity-pill {{severityClass this.severity}}">{{this.severity}}</span>
       </div>
       <div class="vuln-desc">{{this.description}}</div>
+      {{#if this.evidence}}
+      <p>Basis: {{this.basis}}. Attacker prerequisites: {{this.attacker_prerequisites}}</p>
+      <p>Control scope: {{this.control_scope}}</p>
+      <p>Required outcome: {{this.security_requirement}}</p>
+      <p>Proposed negative test (not executed): {{this.negative_test}}</p>
+      <ul>{{#each this.assumptions}}<li>Assumption: {{this}}</li>{{/each}}</ul>
+      {{#each this.evidence}}
+      <p>{{this.path}}:{{this.start_line}}–{{this.end_line}}</p><pre>{{this.quote}}</pre>
+      {{/each}}
+      {{/if}}
     </div>
     {{/each}}
     {{/each}}
