@@ -109,7 +109,8 @@ describe('RemediatorAgent', () => {
         expect.anything(),
         'V-001',
         expect.any(Object),
-        expect.any(Object)
+        expect.any(Object),
+        expect.any(Array)
       );
 
       // V-002 (Medium) → Issue (not in prSeverity)
@@ -156,7 +157,8 @@ describe('RemediatorAgent', () => {
         expect.anything(),
         'V-001',
         expect.any(Object),
-        expect.any(Object)
+        expect.any(Object),
+        expect.any(Array)
       );
 
       // V-002 (Medium) → also PR since medium is in prSeverity
@@ -165,7 +167,8 @@ describe('RemediatorAgent', () => {
         expect.anything(),
         'V-002',
         expect.any(Object),
-        expect.any(Object)
+        expect.any(Object),
+        expect.any(Array)
       );
 
       expect(createIssueIfNotExists).not.toHaveBeenCalled();
@@ -189,7 +192,8 @@ describe('RemediatorAgent', () => {
         expect.anything(),
         'V-001',
         expect.any(Object),
-        expect.any(Object)
+        expect.any(Object),
+        expect.any(Array)
       );
       expect(createFixPR).toHaveBeenCalledTimes(1);
 
@@ -343,6 +347,28 @@ describe('RemediatorAgent', () => {
   });
 
   describe('file selection', () => {
+    test('excludes protected paths while retaining example and application config', () => {
+      const agent = new RemediatorAgent('test-key', 'gh-token');
+      const files = ['.github/workflows/ci.yml', '.env.production', 'action.yml',
+        'CODEOWNERS', '.env.example', '.eslintrc.js', 'infra/main.tf', 'src/app.js']
+        .map(path => ({ path, content: 'query' }));
+      const selected = agent._selectRelevantFiles(files, { title: 'query' });
+      expect(selected.map(file => file.path))
+        .toEqual(['.env.example', '.eslintrc.js', 'infra/main.tf', 'src/app.js']);
+    });
+
+    test('uses POSIX paths for trusted Windows scanner input', () => {
+      const path = require('path');
+      jest.replaceProperty(path, 'sep', '\\');
+      try {
+        const agent = new RemediatorAgent('test-key', 'gh-token');
+        expect(agent._selectRelevantFiles([{ path: 'src\\app.js', content: 'query' }], { title: 'query' }))
+          .toEqual([{ path: 'src/app.js', content: 'query' }]);
+      } finally {
+        jest.restoreAllMocks();
+      }
+    });
+
     test('scores files by keyword relevance', () => {
       const agent = new RemediatorAgent('test-key', 'gh-token');
       const vuln = { id: 'V-001', title: 'SQL Injection in query', description: 'User input concatenated' };
@@ -368,6 +394,42 @@ describe('RemediatorAgent', () => {
   });
 
   describe('result tracking', () => {
+    test('carries only the eight prompt-selected paths separately from model output', async () => {
+      const files = Array.from({ length: 10 }, (_, i) => ({ path: `src/query-${i}.js`, content: 'query' }));
+      const forgedPlan = {
+        confidence: 'high', allowedPaths: ['src/query-9.js'],
+        files: [{ path: 'src/query-9.js', fixed_content: 'changed' }],
+      };
+      resetAnthropicMock({ content: [{ text: JSON.stringify(forgedPlan) }] });
+      const { validateRemediationFiles } = require('../../src/security/remediation-scope');
+      createFixPR.mockImplementationOnce(async (_octokit, _context, _id, plan, _risk, scope) => {
+        validateRemediationFiles(plan, scope);
+      });
+      const agent = new RemediatorAgent('test-key', 'gh-token');
+      const result = await agent.remediate({
+        threatModel: { attack_surfaces: [{ vulnerabilities: [{ id: 'V-001', title: 'query', severity: 'High' }] }] },
+        scannedFiles: files, createIssues: true, autoFix: true,
+      });
+      expect(createFixPR.mock.calls[0][5]).toEqual(files.slice(0, 8).map(file => file.path));
+      const prompt = agent.client.messages.create.mock.calls[0][0].messages[0].content;
+      expect(prompt).toContain('src/query-7.js');
+      expect(prompt).not.toContain('src/query-8.js');
+      expect(result.prsCreated).toEqual([]);
+      expect(result.issuesCreated).toHaveLength(1);
+    });
+
+    test('falls back without model or PR calls when only protected files are relevant', async () => {
+      const agent = new RemediatorAgent('test-key', 'gh-token');
+      const result = await agent.remediate({
+        threatModel: { attack_surfaces: [{ vulnerabilities: [{ id: 'V-001', title: 'query', severity: 'High' }] }] },
+        scannedFiles: [{ path: '.github/workflows/query.yml', content: 'query' }],
+        createIssues: true, autoFix: true,
+      });
+      expect(agent.client.messages.create).not.toHaveBeenCalled();
+      expect(createFixPR).not.toHaveBeenCalled();
+      expect(result.issuesCreated).toHaveLength(1);
+    });
+
     test('returns counts of created issues and PRs', async () => {
       const agent = new RemediatorAgent('test-key', 'gh-token');
 

@@ -253,6 +253,14 @@ permissions:
 
 Both flags require `github-token` to be set. Without a token, remediation is skipped entirely (the action still generates reports as usual).
 
+### Automatic fix scope and new-file policy
+
+Each fix is limited to the up to eight eligible source/config files selected for that vulnerability and supplied to the fix model. The write boundary independently checks the complete response against those exact paths; model-provided scope cannot expand them. Malformed, duplicate, noncanonical or out-of-scope paths reject the whole fix before any branch or file write.
+
+Automatic fixes exclude hidden paths (including GitHub workflows, Git metadata and credential configuration), ownership/CI/Action definitions, and common credential, private-key and Terraform state filenames. The scanner's `.env.example`, `.env.sample`, `.eslintrc.json` and `.eslintrc.js` files remain eligible, along with ordinary application code and infrastructure configuration. These path rules do not prove that file contents are safe; generated changes still need human review.
+
+**New files are not permitted.** Every target must already be a regular file in the pinned default-branch base, including executable source files. Symlinks, submodules, missing files and failed/incomplete base lookups reject the whole fix. This also prevents automatic fixes to files that exist only on a feature branch. Fixes requiring protected paths or new files must be applied manually; rejected fixes fall back to an issue when `create-issues` is enabled.
+
 ### Deduplication
 
 Re-running the action does **not** create duplicates. Each issue and PR body contains a hidden marker (`<!-- thr8:V-001 -->`) that is checked before creating anything new.

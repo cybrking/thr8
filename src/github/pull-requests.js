@@ -1,4 +1,5 @@
 const { buildMarker } = require('./issues');
+const { validateRemediationFiles } = require('../security/remediation-scope');
 
 function branchName(vulnId) {
   return `thr8/fix-${vulnId.toLowerCase()}`;
@@ -56,7 +57,8 @@ async function findExistingPR(octokit, context, vulnId) {
   }
 }
 
-async function createFixPR(octokit, context, vulnId, fixData, risk) {
+async function createFixPR(octokit, context, vulnId, fixData, risk, allowedPaths) {
+  const files = validateRemediationFiles(fixData, allowedPaths);
   const { owner, repo } = context.repo;
   const branch = branchName(vulnId);
 
@@ -74,6 +76,31 @@ async function createFixPR(octokit, context, vulnId, fixData, risk) {
     ref: `heads/${defaultBranch}`,
   });
   const baseSha = ref.object.sha;
+
+  // Preflight the entire plan against the immutable branch base before writing.
+  // New files, symlinks and submodules require a manual fix. Contents GET follows
+  // some symlinks, so inspect Git tree modes instead. Cache shared directories.
+  const trees = new Map();
+  for (const file of files) {
+    let treeSha = baseSha;
+    const parts = file.path.split('/');
+    for (const [index, part] of parts.entries()) {
+      if (!trees.has(treeSha)) {
+        const { data: tree } = await octokit.rest.git.getTree({ owner, repo, tree_sha: treeSha });
+        if (tree.truncated || !Array.isArray(tree.tree)) throw new Error('Incomplete remediation base tree');
+        trees.set(treeSha, tree.tree);
+      }
+      const entry = trees.get(treeSha).find(item => item.path === part);
+      const isFile = index === parts.length - 1;
+      if (!entry || !entry.sha || (isFile
+        ? entry.type !== 'blob' || !['100644', '100755'].includes(entry.mode)
+        : entry.type !== 'tree' || entry.mode !== '040000')) {
+        throw new Error(`Remediation requires an existing regular file at the base: ${file.path}`);
+      }
+      if (isFile) file.sha = entry.sha;
+      else treeSha = entry.sha;
+    }
+  }
 
   // Create branch
   try {
@@ -99,21 +126,7 @@ async function createFixPR(octokit, context, vulnId, fixData, risk) {
   }
 
   // Commit files
-  for (const file of fixData.files) {
-    // Get current file content for the sha
-    let fileSha;
-    try {
-      const { data: existing } = await octokit.rest.repos.getContent({
-        owner,
-        repo,
-        path: file.path,
-        ref: branch,
-      });
-      fileSha = existing.sha;
-    } catch {
-      // File doesn't exist yet, that's ok
-    }
-
+  for (const file of files) {
     await octokit.rest.repos.createOrUpdateFileContents({
       owner,
       repo,
@@ -121,13 +134,13 @@ async function createFixPR(octokit, context, vulnId, fixData, risk) {
       message: `fix: ${vulnId} — ${fixData.explanation || 'security fix'}`.slice(0, 72),
       content: Buffer.from(file.fixed_content).toString('base64'),
       branch,
-      ...(fileSha ? { sha: fileSha } : {}),
+      sha: file.sha,
     });
   }
 
   // Create PR
   const title = `[thr8] Fix ${vulnId}`;
-  const body = buildPRBody(vulnId, fixData, risk);
+  const body = buildPRBody(vulnId, { ...fixData, files }, risk);
 
   const { data: pr } = await octokit.rest.pulls.create({
     owner,

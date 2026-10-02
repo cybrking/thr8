@@ -44694,10 +44694,12 @@ module.exports = CodebaseScannerAgent;
 
 const core = __nccwpck_require__(7484);
 const github = __nccwpck_require__(3228);
+const path = __nccwpck_require__(6928);
 const Anthropic = __nccwpck_require__(121);
 const { parseJsonResponse } = __nccwpck_require__(5119);
 const { createIssueIfNotExists } = __nccwpck_require__(6425);
 const { createFixPR } = __nccwpck_require__(1013);
+const { isAllowedRemediationPath } = __nccwpck_require__(1632);
 
 const FIX_SYSTEM_PROMPT = `You are a senior security engineer generating a minimal, targeted code fix for a specific vulnerability.
 
@@ -44723,6 +44725,7 @@ Produce a JSON response with this exact schema:
 
 Rules:
 - Only modify files that need changing — minimal diff
+- Only modify the supplied source file paths exactly; do not create new files
 - Preserve existing code style and formatting
 - If you are not confident the fix is correct, set confidence to "low"
 - Do NOT introduce new dependencies
@@ -44752,7 +44755,9 @@ class RemediatorAgent {
         const route = this._classifyRoute(vuln, rec, { autoFix, createIssues, prSeverity });
 
         if (route === 'pr') {
-          const fixData = await this._generateFix(vuln, risk, rec, scannedFiles, systemContext);
+          const relevantFiles = this._selectRelevantFiles(scannedFiles, vuln, rec);
+          const allowedPaths = relevantFiles.map(file => file.path);
+          const fixData = await this._generateFix(vuln, risk, rec, relevantFiles, systemContext);
           if (!fixData || fixData.confidence === 'low') {
             core.warning(`[thr8] Low confidence fix for ${vuln.id} — skipping PR, falling back to issue`);
             if (createIssues) {
@@ -44762,7 +44767,7 @@ class RemediatorAgent {
             continue;
           }
           try {
-            const result = await createFixPR(this.octokit, this.context, vuln.id, fixData, risk);
+            const result = await createFixPR(this.octokit, this.context, vuln.id, fixData, risk, allowedPaths);
             if (result.created) results.prsCreated.push(result.pr);
           } catch (prError) {
             core.warning(`[thr8] PR creation failed for ${vuln.id}: ${prError.message}`);
@@ -44869,7 +44874,10 @@ class RemediatorAgent {
   _selectRelevantFiles(scannedFiles, vuln, recommendation) {
     if (!scannedFiles || scannedFiles.length === 0) return [];
 
-    const scored = scannedFiles.map(f => ({
+    const eligibleFiles = scannedFiles
+      .map(file => ({ ...file, path: file.path.split(path.sep).join('/') }))
+      .filter(file => isAllowedRemediationPath(file.path));
+    const scored = eligibleFiles.map(f => ({
       file: f,
       score: this._scoreFileRelevance(f, vuln, recommendation),
     }));
@@ -44882,9 +44890,7 @@ class RemediatorAgent {
       .map(s => s.file);
   }
 
-  async _generateFix(vuln, risk, recommendation, scannedFiles, systemContext) {
-    const relevantFiles = this._selectRelevantFiles(scannedFiles, vuln, recommendation);
-
+  async _generateFix(vuln, risk, recommendation, relevantFiles, systemContext) {
     if (relevantFiles.length === 0) {
       core.warning(`[thr8] No relevant files found for ${vuln.id} — skipping fix generation`);
       return null;
@@ -45434,6 +45440,7 @@ module.exports = {
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 const { buildMarker } = __nccwpck_require__(6425);
+const { validateRemediationFiles } = __nccwpck_require__(1632);
 
 function branchName(vulnId) {
   return `thr8/fix-${vulnId.toLowerCase()}`;
@@ -45491,7 +45498,8 @@ async function findExistingPR(octokit, context, vulnId) {
   }
 }
 
-async function createFixPR(octokit, context, vulnId, fixData, risk) {
+async function createFixPR(octokit, context, vulnId, fixData, risk, allowedPaths) {
+  const files = validateRemediationFiles(fixData, allowedPaths);
   const { owner, repo } = context.repo;
   const branch = branchName(vulnId);
 
@@ -45509,6 +45517,31 @@ async function createFixPR(octokit, context, vulnId, fixData, risk) {
     ref: `heads/${defaultBranch}`,
   });
   const baseSha = ref.object.sha;
+
+  // Preflight the entire plan against the immutable branch base before writing.
+  // New files, symlinks and submodules require a manual fix. Contents GET follows
+  // some symlinks, so inspect Git tree modes instead. Cache shared directories.
+  const trees = new Map();
+  for (const file of files) {
+    let treeSha = baseSha;
+    const parts = file.path.split('/');
+    for (const [index, part] of parts.entries()) {
+      if (!trees.has(treeSha)) {
+        const { data: tree } = await octokit.rest.git.getTree({ owner, repo, tree_sha: treeSha });
+        if (tree.truncated || !Array.isArray(tree.tree)) throw new Error('Incomplete remediation base tree');
+        trees.set(treeSha, tree.tree);
+      }
+      const entry = trees.get(treeSha).find(item => item.path === part);
+      const isFile = index === parts.length - 1;
+      if (!entry || !entry.sha || (isFile
+        ? entry.type !== 'blob' || !['100644', '100755'].includes(entry.mode)
+        : entry.type !== 'tree' || entry.mode !== '040000')) {
+        throw new Error(`Remediation requires an existing regular file at the base: ${file.path}`);
+      }
+      if (isFile) file.sha = entry.sha;
+      else treeSha = entry.sha;
+    }
+  }
 
   // Create branch
   try {
@@ -45534,21 +45567,7 @@ async function createFixPR(octokit, context, vulnId, fixData, risk) {
   }
 
   // Commit files
-  for (const file of fixData.files) {
-    // Get current file content for the sha
-    let fileSha;
-    try {
-      const { data: existing } = await octokit.rest.repos.getContent({
-        owner,
-        repo,
-        path: file.path,
-        ref: branch,
-      });
-      fileSha = existing.sha;
-    } catch {
-      // File doesn't exist yet, that's ok
-    }
-
+  for (const file of files) {
     await octokit.rest.repos.createOrUpdateFileContents({
       owner,
       repo,
@@ -45556,13 +45575,13 @@ async function createFixPR(octokit, context, vulnId, fixData, risk) {
       message: `fix: ${vulnId} — ${fixData.explanation || 'security fix'}`.slice(0, 72),
       content: Buffer.from(file.fixed_content).toString('base64'),
       branch,
-      ...(fileSha ? { sha: fileSha } : {}),
+      sha: file.sha,
     });
   }
 
   // Create PR
   const title = `[thr8] Fix ${vulnId}`;
-  const body = buildPRBody(vulnId, fixData, risk);
+  const body = buildPRBody(vulnId, { ...fixData, files }, risk);
 
   const { data: pr } = await octokit.rest.pulls.create({
     owner,
@@ -45814,6 +45833,53 @@ module.exports = { run };
 if (require.main === require.cache[eval('__filename')]) {
   run();
 }
+
+
+/***/ }),
+
+/***/ 1632:
+/***/ ((module) => {
+
+// Automatic fixes may edit source/config supplied by the caller, not repository
+// automation, access policy, or credential material. These paths need manual fixes.
+const SAFE_DOTFILES = new Set(['.env.example', '.env.sample', '.eslintrc.json', '.eslintrc.js']);
+const SENSITIVE_NAMES = /^(?:codeowners|jenkinsfile|action\.ya?ml|azure-pipelines\.ya?ml|bitbucket-pipelines\.ya?ml|circle\.ya?ml|(?:credentials?|secrets?)(?:\.(?:json|ya?ml|ini|toml|cfg|conf))?|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?)$/i;
+const SENSITIVE_EXTENSIONS = /\.(?:pem|key|p12|pfx|jks|keystore|tfstate(?:\.backup)?)$/i;
+
+function isAllowedRemediationPath(filePath) {
+  if (typeof filePath !== 'string' || !filePath || filePath.trim() !== filePath ||
+      /[\\%:\x00-\x1f\x7f]/.test(filePath)) return false;
+  const parts = filePath.split('/');
+  return parts.every((part, index) => part && part !== '.' && part !== '..' &&
+    (!part.startsWith('.') || (index === parts.length - 1 && SAFE_DOTFILES.has(part))) &&
+    !SENSITIVE_NAMES.test(part) && !SENSITIVE_EXTENSIONS.test(part));
+}
+
+function validateRemediationFiles(fixData, allowedPaths) {
+  // Scope must be supplied separately by the caller, never by model output.
+  if (!Array.isArray(allowedPaths) || !allowedPaths.length ||
+      !allowedPaths.every(isAllowedRemediationPath)) {
+    throw new Error('Missing or invalid approved remediation scope');
+  }
+  if (!fixData || !Array.isArray(fixData.files) || !fixData.files.length) {
+    throw new Error('Fix must contain a nonempty files array');
+  }
+  const allowed = new Set(allowedPaths);
+  const seen = new Set();
+  return fixData.files.map(file => {
+    if (!file || !isAllowedRemediationPath(file.path) || !allowed.has(file.path)) {
+      throw new Error('Fix path is outside the approved remediation scope or is sensitive');
+    }
+    if (seen.has(file.path) || typeof file.fixed_content !== 'string') {
+      throw new Error('Fix contains duplicate paths or invalid file content');
+    }
+    seen.add(file.path);
+    // Snapshot the validated fields before any asynchronous GitHub calls.
+    return { path: file.path, fixed_content: file.fixed_content };
+  });
+}
+
+module.exports = { isAllowedRemediationPath, validateRemediationFiles };
 
 
 /***/ }),
