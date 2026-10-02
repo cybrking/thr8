@@ -46,7 +46,23 @@ inputs:
     description: 'Path to a markdown file containing security review findings (e.g. output from Claude security-review skill). Injected into threat analysis as high-confidence, code-level evidence.'
     required: false
 
+  feature-spec:
+    description: 'Repository-relative path to the feature requirements to review'
+    required: false
+  security-model:
+    description: 'Repository-relative path to reviewed security context (e.g. security/threat-model.md)'
+    required: false
+  base-ref:
+    description: 'Base Git ref for merge-base diff review; requires fetched history and a clean checkout at head-ref'
+    required: false
+  head-ref:
+    description: 'Head Git ref for diff review'
+    required: false
+    default: 'HEAD'
+
 outputs:
+  assessment-status:
+    description: 'complete (within declared scope), incomplete (coverage omissions), or failed (analysis/input error)'
   threats-found:
     description: 'Total vulnerabilities identified'
   high-risk-count:

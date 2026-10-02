@@ -2,7 +2,7 @@
 
 [![GitHub Action](https://img.shields.io/badge/GitHub_Action-PASTA_Threat_Model-red?logo=github-actions&logoColor=white)](https://github.com/marketplace/actions/pasta-threat-model-generator)
 
-A GitHub Action that automatically generates PASTA (Process for Attack Simulation and Threat Analysis) threat models by analyzing your repository's code, infrastructure, and dependencies. Uses static analysis for discovery and Claude AI for intelligent threat reasoning.
+A GitHub Action that automatically generates PASTA (Process for Attack Simulation and Threat Analysis) threat models by analyzing your repository's code, infrastructure, and dependencies. Collects source files and uses Claude for system discovery, data-flow inference and threat reasoning. Also includes a Claude Code plugin for reviewed security context and feature/diff reviews.
 
 ## Features
 
@@ -13,6 +13,73 @@ A GitHub Action that automatically generates PASTA (Process for Attack Simulatio
 - **Multiple output formats** — Markdown (with Mermaid diagrams), JSON, HTML, and optional PDF
 - **Automated remediation** — Creates GitHub Issues for findings and AI-generated fix PRs for critical vulnerabilities
 - **CI/CD integration** — Fail builds on critical-risk findings, upload reports as artifacts
+
+## Claude Code workflow
+
+thr8 maintains reviewed security context and applies it to proposed software changes. Start with these commands inside a target repository:
+
+```bash
+# Clone thr8 elsewhere, then launch Claude Code from the repository to review:
+claude --plugin-dir /absolute/path/to/thr8/plugins/thr8
+```
+
+```text
+/thr8:threat-model
+/thr8:review main
+/thr8:review External collaborators can mention eligible thread participants
+```
+
+`/thr8:threat-model` drafts or updates `security/threat-model.md` with code citations, assets, boundaries, control scope, uncertainties and threat decisions. Human review establishes approved assumptions; generated content stays draft. `/thr8:review` reads that file and feature/diff context, traces surrounding code, and saves `security/reviews/<head>-review.md` with attacker prerequisites, evidence, required security outcomes and proposed negative tests. Review proposes changes to existing decisions without silently replacing human approvals. Version those files with the application.
+
+To share through the repository's plugin marketplace after these changes are available on the default branch:
+
+```text
+/plugin marketplace add cybrking/thr8
+/plugin install thr8@thr8-tools
+```
+
+Plugin structure and local loading follow the [Claude Code plugin documentation](https://code.claude.com/docs/en/plugins). A [starter template](plugins/thr8/templates/threat-model.md) is bundled; [thr8's own context](security/threat-model.md) is an initial draft, not an approved security policy.
+
+This first version tracks decisions in a human-reviewed Markdown ledger. It does not automatically reconcile threat history in CI or prove that a suggested mitigation works. Negative tests are proposals, not executed verification. Model quality must be evaluated on vulnerable and corrected changes before relying on detection coverage.
+
+## Assessment integrity and change review in CI
+
+Scanner/model API errors and malformed responses fail the Action without publishing a zero threat count. Counts are derived from validated vulnerabilities. Feature/context/diff reviews require exact source citations plus attacker prerequisites, assumptions, control scope, a security requirement and a negative-test proposal. Citation validation establishes that the quoted source exists; it does not establish that the security interpretation is correct.
+
+Reports include mode, commits and scanner coverage. Files are capped at 8,000 characters and the total source budget is 120,000 characters; diffs are capped at 60,000 characters. Source truncation, budget exclusions, unreadable content and existing changed files outside scanner scope mark the assessment incomplete, fail the job and disable issue/fix creation. Intentionally excluded dependencies, generated files, symlinks and hidden directories other than `.github` remain outside the declared scope. A complete result means analysis completed within that scope, not that the repository is secure. Large repositories, including large lockfiles, can need a narrower pilot scope or future retrieval improvements.
+
+Explicit context/findings files must be nonempty, at most 40,000 characters each, and resolve inside the repository. A requested unreadable context fails; it is never silently omitted. Diff mode uses tracked head files only, resolves refs to commits, and requires a clean tracked checkout at head. Fetch the base and head history; missing refs fail. Deleted source is visible in the diff, but evidence citations are currently validated against head source only.
+
+For PRs, review the actual head commit rather than GitHub's synthetic merge checkout. Once these changes are merged, use the new inputs like this (pin the Action itself to a reviewed commit SHA in production):
+
+```yaml
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  change-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: cybrking/thr8@main
+        id: review
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          security-model: security/threat-model.md
+          feature-spec: docs/feature.md
+          base-ref: ${{ github.event.pull_request.base.sha }}
+          head-ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: thr8-review
+          path: threat-model/
+```
+
+Keep the referenced context/spec files in the application repository. Fork PRs normally cannot access the API secret; enable this job only where that secret is available. Keep code review on `pull_request`, with remediation disabled by default.
 
 ## Quick Start
 
@@ -59,12 +126,18 @@ jobs:
 | `github-token` | No | — | GitHub token for creating issues and PRs (enables remediation) |
 | `create-issues` | No | `false` | Create GitHub Issues for medium/low findings |
 | `auto-fix` | No | `false` | Generate AI fix PRs for critical/immediate findings |
+| `feature-spec` | No | — | Repository-relative path to feature requirements |
+| `security-model` | No | — | Repository-relative path to reviewed security context |
+| `base-ref` | No | — | Git base ref; review uses its merge base with head |
+| `head-ref` | No | `HEAD` | Head Git ref; checkout must match it with no tracked edits |
+| `security-findings` | No | — | Repository-contained file of candidate findings; checked against source |
 | `pr-severity` | No | `critical,high` | Comma-separated severity levels that get fix PRs when auto-fix is enabled |
 
 ## Outputs
 
 | Output | Description |
 |--------|-------------|
+| `assessment-status` | `complete` within declared scope, `incomplete` for coverage omissions, or `failed` for input/analysis errors |
 | `threats-found` | Total number of vulnerabilities identified |
 | `high-risk-count` | Number of critical-risk vulnerabilities |
 | `report-path` | Path to the generated report directory |
@@ -76,7 +149,7 @@ jobs:
 The action runs a 4-stage pipeline:
 
 ```
-  Discovery (Static)           Reasoning (Claude AI)           Output            Remediation
+  Discovery (Claude)           Reasoning (Claude AI)           Output            Remediation
 ┌─────────────────────┐      ┌──────────────────────┐      ┌──────────┐      ┌──────────────┐
 │                     │      │ Business Objectives   │      │ Markdown │      │ GitHub Issues│
 │  Codebase Scanner   │─────>│ Attack Surfaces       │─────>│ JSON     │─────>│ Fix PRs      │
@@ -84,11 +157,11 @@ The action runs a 4-stage pipeline:
 │ • Tech stack        │      │ Risk Analysis         │      │ PDF      │      │ (optional)   │
 │ • Infrastructure    │      │ Recommendations       │      │          │      │              │
 │ • API endpoints     │      │                       │      │          │      │              │
-│ • Data flows        │      │ (3 focused API calls)  │      │          │      │              │
+│ • Data flows        │      │ (2 calls + continuations)  │      │          │      │              │
 └─────────────────────┘      └──────────────────────┘      └──────────┘      └──────────────┘
 ```
 
-**Stage 1 — Discovery** scans your repository using static analysis (no API calls) to collect tech stack, infrastructure, API endpoints, and data flow context.
+**Stage 1 — Discovery** collects recognized source/configuration files, then asks Claude to infer the tech stack, infrastructure, API endpoints and data flows from that source. This is model-driven analysis, not a deterministic static analyzer.
 
 **Stage 2 — Reasoning** sends the collected context to Claude for PASTA analysis: identifying business objectives, mapping attack surfaces, generating realistic attack scenarios (kill chains), and scoring risks.
 
@@ -179,6 +252,14 @@ permissions:
 | `pr-severity: 'critical,high'` | Controls which severity levels get fix PRs (default: `critical,high`). Set to `critical,high,medium` to also auto-fix medium findings, or `critical` to limit PRs to only critical vulnerabilities. |
 
 Both flags require `github-token` to be set. Without a token, remediation is skipped entirely (the action still generates reports as usual).
+
+### Automatic fix scope and new-file policy
+
+Each fix is limited to the up to eight eligible source/config files selected for that vulnerability and supplied to the fix model. The write boundary independently checks the complete response against those exact paths; model-provided scope cannot expand them. Malformed, duplicate, noncanonical or out-of-scope paths reject the whole fix before any branch or file write.
+
+Automatic fixes exclude hidden paths (including GitHub workflows, Git metadata and credential configuration), ownership/CI/Action definitions, and common credential, private-key and Terraform state filenames. The scanner's `.env.example`, `.env.sample`, `.eslintrc.json` and `.eslintrc.js` files remain eligible, along with ordinary application code and infrastructure configuration. These path rules do not prove that file contents are safe; generated changes still need human review.
+
+**New files are not permitted.** Every target must already be a regular file in the pinned default-branch base, including executable source files. Symlinks, submodules, missing files and failed/incomplete base lookups reject the whole fix. This also prevents automatic fixes to files that exist only on a feature branch. Fixes requiring protected paths or new files must be applied manually; rejected fixes fall back to an issue when `create-issues` is enabled.
 
 ### Deduplication
 
@@ -312,13 +393,9 @@ The codebase scanner automatically detects:
 
 ## Cost
 
-The action makes **3 Claude API calls** per run using `claude-sonnet-4-6` for threat analysis:
+The Action makes two initial Claude API calls using `claude-sonnet-4-6`: discovery and threat generation. Long responses can require continuation calls. Remediation adds a call per attempted fix. Cost depends on source/diff size, response length and current Anthropic pricing; the Action now passes source evidence into reasoning as well as discovery.
 
-- Typical input: ~2–5K tokens per call
-- Typical output: ~3–8K tokens per call
-- **Estimated cost: $0.05–0.15 per run** (analysis only)
-
-With `auto-fix` enabled, an additional API call is made per critical/high vulnerability to generate fix code. Each fix call uses ~2–4K input tokens and ~2–4K output tokens. For a typical repo with 1–3 critical findings, this adds ~$0.02–0.06 per run.
+The Claude Code plugin uses your configured Claude Code access and does not require a separate Anthropic API key. Its token usage follows your Claude Code plan.
 
 ## Development
 

@@ -76,16 +76,40 @@ describe('CodebaseScannerAgent', () => {
     expect(paths.some(p => p.endsWith('.js'))).toBe(true);
   });
 
-  test('falls back on API error', async () => {
+  test('rejects on API error', async () => {
     const Anthropic = require('@anthropic-ai/sdk');
     Anthropic.mockImplementation(() => ({
       messages: { create: jest.fn().mockRejectedValue(new Error('API error')) }
     }));
     const agent = new CodebaseScannerAgent('test-key');
-    const result = await agent.analyze(FIXTURE_PATH);
+    await expect(agent.analyze(FIXTURE_PATH)).rejects.toThrow('Codebase scan failed: API error');
+  });
+});
 
-    expect(result.systemContext).toEqual({});
-    expect(result.dataFlows).toEqual({ flows: [] });
-    expect(result.filesScanned).toBeGreaterThan(0);
+
+describe('Scanner coverage integrity', () => {
+  const fs = require('fs');
+  const os = require('os');
+  let repo;
+  beforeEach(() => { repo = fs.mkdtempSync(path.join(os.tmpdir(), 'thr8-scanner-')); });
+  afterEach(() => fs.rmSync(repo, { recursive: true, force: true }));
+
+  test('exposes truncated source coverage', () => {
+    fs.writeFileSync(path.join(repo, 'route.js'), 'x'.repeat(9000));
+    fs.writeFileSync(path.join(repo, 'new.js'), 'return participants;');
+    const agent = new CodebaseScannerAgent('test-key');
+    const files = agent._readFiles(agent._collectFiles(repo));
+    expect(files.find(f => f.path === 'route.js').content.length).toBe(8000);
+    expect(agent.readOmissions).toEqual([expect.stringContaining('Truncated source: route.js')]);
+  });
+  test('collects workflows and skips symlinked source outside the repository', () => {
+    fs.mkdirSync(path.join(repo, '.github/workflows'), { recursive: true });
+    fs.writeFileSync(path.join(repo, '.github/workflows/build.yml'), 'permissions: read-all');
+    fs.symlinkSync('/etc/hosts', path.join(repo, 'escaped.js'));
+    const files = new CodebaseScannerAgent('test-key')._collectFiles(repo);
+    expect(files.map(f => f.path)).toEqual(['.github/workflows/build.yml']);
+  });
+  test('rejects an empty repository before attempting analysis', async () => {
+    await expect(new CodebaseScannerAgent('test-key').analyze(repo)).rejects.toThrow('no readable source');
   });
 });

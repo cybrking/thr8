@@ -1,9 +1,11 @@
 const core = require('@actions/core');
 const github = require('@actions/github');
+const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 const { parseJsonResponse } = require('../utils/parse-json');
 const { createIssueIfNotExists } = require('../github/issues');
 const { createFixPR } = require('../github/pull-requests');
+const { isAllowedRemediationPath } = require('../security/remediation-scope');
 
 const FIX_SYSTEM_PROMPT = `You are a senior security engineer generating a minimal, targeted code fix for a specific vulnerability.
 
@@ -29,6 +31,7 @@ Produce a JSON response with this exact schema:
 
 Rules:
 - Only modify files that need changing — minimal diff
+- Only modify the supplied source file paths exactly; do not create new files
 - Preserve existing code style and formatting
 - If you are not confident the fix is correct, set confidence to "low"
 - Do NOT introduce new dependencies
@@ -58,7 +61,9 @@ class RemediatorAgent {
         const route = this._classifyRoute(vuln, rec, { autoFix, createIssues, prSeverity });
 
         if (route === 'pr') {
-          const fixData = await this._generateFix(vuln, risk, rec, scannedFiles, systemContext);
+          const relevantFiles = this._selectRelevantFiles(scannedFiles, vuln, rec);
+          const allowedPaths = relevantFiles.map(file => file.path);
+          const fixData = await this._generateFix(vuln, risk, rec, relevantFiles, systemContext);
           if (!fixData || fixData.confidence === 'low') {
             core.warning(`[thr8] Low confidence fix for ${vuln.id} — skipping PR, falling back to issue`);
             if (createIssues) {
@@ -68,7 +73,7 @@ class RemediatorAgent {
             continue;
           }
           try {
-            const result = await createFixPR(this.octokit, this.context, vuln.id, fixData, risk);
+            const result = await createFixPR(this.octokit, this.context, vuln.id, fixData, risk, allowedPaths);
             if (result.created) results.prsCreated.push(result.pr);
           } catch (prError) {
             core.warning(`[thr8] PR creation failed for ${vuln.id}: ${prError.message}`);
@@ -175,7 +180,10 @@ class RemediatorAgent {
   _selectRelevantFiles(scannedFiles, vuln, recommendation) {
     if (!scannedFiles || scannedFiles.length === 0) return [];
 
-    const scored = scannedFiles.map(f => ({
+    const eligibleFiles = scannedFiles
+      .map(file => ({ ...file, path: file.path.split(path.sep).join('/') }))
+      .filter(file => isAllowedRemediationPath(file.path));
+    const scored = eligibleFiles.map(f => ({
       file: f,
       score: this._scoreFileRelevance(f, vuln, recommendation),
     }));
@@ -188,9 +196,7 @@ class RemediatorAgent {
       .map(s => s.file);
   }
 
-  async _generateFix(vuln, risk, recommendation, scannedFiles, systemContext) {
-    const relevantFiles = this._selectRelevantFiles(scannedFiles, vuln, recommendation);
-
+  async _generateFix(vuln, risk, recommendation, relevantFiles, systemContext) {
     if (relevantFiles.length === 0) {
       core.warning(`[thr8] No relevant files found for ${vuln.id} — skipping fix generation`);
       return null;

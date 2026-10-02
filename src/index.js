@@ -1,11 +1,11 @@
 const core = require('@actions/core');
-const fs = require('fs');
 const path = require('path');
 
 const CodebaseScannerAgent = require('./agents/codebase-scanner');
 const ThreatGeneratorAgent = require('./agents/threat-generator');
 const ReporterAgent = require('./agents/reporter');
 const RemediatorAgent = require('./agents/remediator');
+const { loadReviewContext, readContextFile } = require('./security/review-context');
 
 async function run() {
   try {
@@ -23,32 +23,47 @@ async function run() {
     let externalFindings = null;
     const findingsPath = core.getInput('security-findings');
     if (findingsPath) {
-      const resolvedPath = path.isAbsolute(findingsPath)
-        ? findingsPath
-        : path.join(repoPath, findingsPath);
-      try {
-        externalFindings = fs.readFileSync(resolvedPath, 'utf8');
-        core.info(`Loaded security findings from: ${resolvedPath}`);
-      } catch (err) {
-        core.warning(`Could not read security-findings file "${resolvedPath}": ${err.message}`);
-      }
+      externalFindings = readContextFile(repoPath, findingsPath);
+      core.info(`Loaded security findings from: ${findingsPath}`);
     }
+
+    const reviewContext = loadReviewContext(repoPath, {
+      featureSpec: core.getInput('feature-spec'),
+      securityModel: core.getInput('security-model'),
+      baseRef: core.getInput('base-ref'),
+      headRef: core.getInput('head-ref') || 'HEAD',
+    });
+    if (reviewContext.featureSpec || reviewContext.securityModel) reviewContext.mode = 'change-review';
 
     // Derive project name from repo
     const repoName = process.env.GITHUB_REPOSITORY || path.basename(repoPath);
 
     // Step 1: Scan codebase + map data flows (PASTA Stage 3)
     core.startGroup('Scanning codebase...');
-    const { systemContext, dataFlows, filesScanned, files } = await new CodebaseScannerAgent(apiKey).analyze(repoPath);
+    const { systemContext, dataFlows, filesScanned, files, coverage } = await new CodebaseScannerAgent(apiKey).analyze(repoPath, reviewContext);
     core.info(`Scanned ${filesScanned} files`);
     core.endGroup();
 
     // Step 2: PASTA threat analysis (Stages 1-2, 4-7)
     core.startGroup('Generating PASTA threat analysis...');
     const threatModel = await new ThreatGeneratorAgent(apiKey).generate({
-      systemContext, dataFlows, externalFindings,
+      systemContext, dataFlows, externalFindings, files, coverage, reviewContext,
     });
     core.endGroup();
+
+    const omissions = [...coverage.omissions, ...reviewContext.omissions];
+    const assessmentStatus = omissions.length ? 'incomplete' : 'complete';
+    threatModel.assessment = {
+      status: assessmentStatus,
+      coverage: { ...coverage, omissions },
+      mode: reviewContext.mode || 'repository',
+      base_commit: reviewContext.baseCommit || null,
+      head_commit: reviewContext.headCommit || null,
+      merge_base: reviewContext.mergeBase || null,
+      changed_files: reviewContext.changedFiles,
+    };
+    core.setOutput('assessment-status', assessmentStatus);
+    if (assessmentStatus === 'incomplete') core.warning('Assessment incomplete: source or diff coverage has omissions');
 
     // Step 3: Generate reports
     core.startGroup('Generating reports...');
@@ -72,7 +87,7 @@ async function run() {
 
     // Step 4: Automated remediation
     let remediationResults = null;
-    if (githubToken && (createIssues || autoFix)) {
+    if (assessmentStatus === 'complete' && githubToken && (createIssues || autoFix)) {
       core.startGroup('Running automated remediation...');
       try {
         const remediator = new RemediatorAgent(apiKey, githubToken);
@@ -113,6 +128,7 @@ async function run() {
     // Section 1 — Overall Risk
     core.summary
       .addHeading('PASTA Threat Model Results', 1)
+      .addRaw(`**Assessment: ${assessmentStatus}** — ${coverage.filesIncluded}/${coverage.filesDiscovered} discovered files included. ${omissions.length} coverage omissions.\n\n`)
       .addRaw(`**Overall Risk: ${riskStatus}**\n\n`);
 
     // Section 2 — Top Risks (sorted Critical → Low)
@@ -189,12 +205,15 @@ async function run() {
 
     await core.summary.write();
 
+    if (assessmentStatus === 'incomplete') core.setFailed('Threat assessment incomplete; see report coverage omissions');
+
     // Step 7: Fail if needed
     if (failOnHighRisk && criticalCount > 0) {
       core.setFailed(`Found ${criticalCount} critical-risk vulnerabilities`);
     }
 
   } catch (error) {
+    core.setOutput('assessment-status', 'failed');
     core.setFailed(error.message);
   }
 }

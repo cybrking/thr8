@@ -71,26 +71,47 @@ describe('ThreatGeneratorAgent', () => {
       dataFlows: { flows: [] },
     });
     expect(result.business_objectives).toBeDefined();
-    expect(result.overall_risk_status).toBe('HIGH');
+    expect(result.overall_risk_status).toBe('CRITICAL');
     expect(result.attack_surfaces[0].vulnerabilities.length).toBeGreaterThan(0);
     expect(result.attack_scenarios).toBeDefined();
     expect(result.risk_analysis[0].pasta_level).toBe('Critical');
     expect(result.tactical_recommendations.length).toBeGreaterThan(0);
-    expect(result.summary.total_vulnerabilities).toBe(5);
+    expect(result.summary.total_vulnerabilities).toBe(1);
   });
 
-  test('falls back to empty on error', async () => {
+  test('passes feature context and exact source into reasoning and validates the coding brief', async () => {
+    const agent = new ThreatGeneratorAgent('test-key');
+    const response = JSON.parse(JSON.stringify(mockPastaModel));
+    Object.assign(response.attack_surfaces[0].vulnerabilities[0], {
+      basis: 'observed', assumptions: ['Deployment unknown'],
+      attacker_prerequisites: 'Guest membership', control_scope: 'Workspace only',
+      security_requirement: 'Restrict lookup to eligible participants',
+      negative_test: 'Guest cannot enumerate employee emails',
+      evidence: [{ path: 'route.js', start_line: 1, end_line: 1, quote: 'lookup(workspace)' }],
+    });
+    agent.client.messages.create.mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify(response) }], stop_reason: 'end_turn',
+    });
+    const result = await agent.generate({
+      systemContext: {}, dataFlows: { flows: [] },
+      files: [{ path: 'route.js', content: 'return lookup(workspace);' }],
+      coverage: { omissions: ['Truncated other source'] },
+      reviewContext: { mode: 'change-review', featureSpec: 'Guests can mention participants', diff: '+lookup(workspace)' },
+    });
+    const input = agent.client.messages.create.mock.calls[0][0].messages[0].content;
+    expect(input).toContain('Guests can mention participants');
+    expect(input).toContain('+lookup(workspace)');
+    expect(input).toContain('return lookup(workspace);');
+    expect(input).toContain('Truncated other source');
+    expect(result.attack_surfaces[0].vulnerabilities[0].negative_test).toContain('cannot enumerate');
+  });
+
+  test('rejects instead of returning a clean result on error', async () => {
     const Anthropic = require('@anthropic-ai/sdk');
     Anthropic.mockImplementation(() => ({
       messages: { create: jest.fn().mockRejectedValue(new Error('fail')) }
     }));
     const agent = new ThreatGeneratorAgent('test-key');
-    const result = await agent.generate({
-      techStack: {}, infrastructure: {}, apiSurface: { endpoints: [] }, dataFlows: { flows: [] }
-    });
-    expect(result.attack_surfaces).toEqual([]);
-    expect(result.risk_analysis).toEqual([]);
-    expect(result.tactical_recommendations).toEqual([]);
-    expect(result.summary.total_vulnerabilities).toBe(0);
+    await expect(agent.generate({ dataFlows: { flows: [] } })).rejects.toThrow('Threat generation failed: fail');
   });
 });

@@ -1,0 +1,7 @@
+{
+  "name": "thr8",
+  "version": "0.1.0",
+  "description": "Maintain reviewed repository security context and review feature changes for evidence-backed attack paths",
+  "author": { "name": "cybrking" },
+  "repository": "https://github.com/cybrking/thr8"
+}

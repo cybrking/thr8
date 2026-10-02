@@ -7,7 +7,7 @@ const SKIP_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', '.next', '__pycache__',
   'vendor', '.terraform', '.cache', 'coverage', '.nyc_output',
   'target', 'bin', 'obj', '.gradle', '.idea', '.vscode',
-  'venv', '.venv', 'env', '.env', 'bower_components',
+  'venv', '.venv', 'env', '.env', 'bower_components', 'threat-model',
 ]);
 
 const SKIP_EXTENSIONS = new Set([
@@ -47,19 +47,21 @@ class CodebaseScannerAgent {
   _collectFiles(repoPath) {
     const files = [];
     const priorityFiles = [];
+    this.collectionOmissions = [];
 
     const walk = (dir, depth = 0) => {
-      if (depth > 8) return;
+      if (depth > 8) { this.collectionOmissions.push(`Depth limit: ${path.relative(repoPath, dir)}`); return; }
       let entries;
       try {
         entries = fs.readdirSync(dir, { withFileTypes: true });
       } catch {
+        this.collectionOmissions.push(`Unreadable directory: ${path.relative(repoPath, dir)}`);
         return;
       }
 
       for (const entry of entries) {
         if (entry.name.startsWith('.') && !PRIORITY_FILES.includes(entry.name)) {
-          if (entry.isDirectory()) continue;
+          if (entry.isDirectory() && entry.name !== '.github') continue;
         }
 
         const fullPath = path.join(dir, entry.name);
@@ -71,6 +73,7 @@ class CodebaseScannerAgent {
           continue;
         }
 
+        if (!entry.isFile()) continue;
         const ext = path.extname(entry.name).toLowerCase();
         if (SKIP_EXTENSIONS.has(ext)) continue;
 
@@ -109,39 +112,57 @@ class CodebaseScannerAgent {
   _readFiles(fileList) {
     const results = [];
     let totalSize = 0;
+    this.readOmissions = [];
 
     for (const file of fileList) {
-      if (totalSize >= MAX_TOTAL_SIZE) break;
+      if (totalSize >= MAX_TOTAL_SIZE) { this.readOmissions.push(`Budget excluded: ${file.path}`); continue; }
 
       try {
         let content = fs.readFileSync(file.fullPath, 'utf8');
 
         // Skip files that look binary
-        if (/[\x00-\x08\x0E-\x1F]/.test(content.slice(0, 100))) continue;
+        if (/[\x00-\x08\x0E-\x1F]/.test(content.slice(0, 100))) { this.readOmissions.push(`Binary file: ${file.path}`); continue; }
 
-        // Truncate large files
-        if (content.length > MAX_FILE_SIZE) {
-          content = content.slice(0, MAX_FILE_SIZE) + '\n... [truncated]';
-        }
-
-        // Skip package-lock.json content (just note it exists)
-        if (file.path === 'package-lock.json') {
-          content = '(lock file exists - dependencies are pinned)';
+        const originalLength = content.length;
+        const limit = Math.min(MAX_FILE_SIZE, MAX_TOTAL_SIZE - totalSize);
+        if (content.length > limit) {
+          content = content.slice(0, limit);
+          this.readOmissions.push(`Truncated source: ${file.path} (${content.length}/${originalLength} characters)`);
         }
 
         totalSize += content.length;
         results.push({ path: file.path, content });
       } catch {
-        // Skip unreadable files
+        this.readOmissions.push(`Unreadable file: ${file.path}`);
       }
     }
 
     return results;
   }
 
-  async analyze(repoPath) {
-    const fileList = this._collectFiles(repoPath);
+  async analyze(repoPath, { changedFiles = [], trackedFiles } = {}) {
+    let fileList = this._collectFiles(repoPath);
+    if (trackedFiles) {
+      const tracked = new Set(trackedFiles);
+      fileList = fileList.filter(f => tracked.has(f.path));
+    }
+    const changed = new Set(changedFiles);
+    fileList.sort((a, b) => Number(changed.has(b.path)) - Number(changed.has(a.path)));
+    const collected = new Set(fileList.map(f => f.path));
+    for (const changedPath of changedFiles) {
+      // Deleted files remain available in the diff; existing changed files need source context.
+      if (!collected.has(changedPath) && fs.existsSync(path.join(repoPath, changedPath))) {
+        this.collectionOmissions.push(`Changed file outside scanner scope: ${changedPath}`);
+      }
+    }
     const files = this._readFiles(fileList);
+    if (!files.length) throw new Error('Codebase scan has no readable source files');
+    const coverage = {
+      filesDiscovered: fileList.length,
+      filesIncluded: files.length,
+      omissions: [...this.collectionOmissions, ...this.readOmissions],
+      scope: 'Recognized source/config files including .github workflows, excluding generated files, other hidden directories, symlinks and dependencies; max depth 8, 8000 chars/file, 120000 total chars',
+    };
 
     const filesSummary = files.map(f =>
       `--- ${f.path} ---\n${f.content}`
@@ -238,21 +259,20 @@ ${filesSummary}`
 
       const text = await callWithContinuation(this.client, params);
       const result = parseJsonResponse(text);
+      if (!result.system_context || typeof result.system_context !== 'object' || Array.isArray(result.system_context) ||
+          !Object.keys(result.system_context).length || !Array.isArray(result.data_flows?.flows)) {
+        throw new Error('Invalid scanner response: missing system context or data flows');
+      }
 
       return {
         systemContext: result.system_context || {},
         dataFlows: result.data_flows || { flows: [] },
+        coverage,
         filesScanned: files.length,
         files,
       };
     } catch (error) {
-      console.error('Codebase scan failed:', error.message);
-      return {
-        systemContext: {},
-        dataFlows: { flows: [] },
-        filesScanned: files.length,
-        files: [],
-      };
+      throw new Error(`Codebase scan failed: ${error.message}`);
     }
   }
 }
