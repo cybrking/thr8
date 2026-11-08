@@ -44,7 +44,7 @@ const MAX_RELEVANT_FILES = 8;
 class RemediatorAgent {
   constructor(apiKey, githubToken, model) {
     this.client = new Anthropic({ apiKey });
-    this.model = resolveClaudeModel(model && typeof model === 'object' ? model.id : model);
+    this.model = resolveClaudeModel(model);
     this.octokit = github.getOctokit(githubToken);
     this.context = github.context;
   }

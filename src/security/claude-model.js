@@ -63,20 +63,31 @@ const MODELS = {
   },
 };
 
+function supportedModel(id) {
+  // Own property only. `MODELS[id]` is also truthy for inherited names such
+  // as constructor, toString, and __proto__, and those must not select a model.
+  return typeof id === 'string' && Object.hasOwn(MODELS, id) ? MODELS[id] : null;
+}
+
+function unsupportedModelError(id) {
+  const label = typeof id === 'string' && id.trim() ? id.trim() : 'invalid';
+  return new Error(
+    `Unsupported model "${label}". Supported models: claude-sonnet-5-5 (default), claude-opus-5-5. The Action does not substitute a different model. claude-sonnet-4-6 remains available only by using the v1.2.1 tag.`
+  );
+}
+
 function resolveClaudeModel(input) {
-  const requested = typeof input === 'string' ? input.trim() : '';
-  const id = requested || DEFAULT_MODEL_ID;
-  const profile = MODELS[id];
-  if (!profile) {
-    throw new Error(
-      `Unsupported model "${id}". Supported models: claude-sonnet-5-5 (default), claude-opus-5-5. The Action does not substitute a different model.`
-    );
+  if (input == null || (typeof input === 'string' && input.trim() === '')) {
+    return MODELS[DEFAULT_MODEL_ID];
   }
+  const id = typeof input === 'string' ? input.trim() : (input && typeof input === 'object' ? input.id : '');
+  const profile = supportedModel(id);
+  if (!profile) throw unsupportedModelError(typeof input === 'string' ? input : id);
   return profile;
 }
 
 function messageParams(profile, role) {
-  if (!profile || !MODELS[profile.id]) {
+  if (!supportedModel(profile && profile.id)) {
     throw new Error('Unsupported model profile. The Action does not substitute a different model.');
   }
   if (role !== 'analysis' && role !== 'remediation') {
@@ -94,6 +105,14 @@ function usesStreaming(maxTokens) {
   return maxTokens > NONSTREAMING_MAX_TOKENS;
 }
 
+// SDK calculateNonstreamingTimeout maps 128000 tokens to 60 minutes. Streaming
+// skips that calculation and otherwise aborts at 10 minutes, which is shorter
+// than the Opus budget. The client timeout uses the same ratio.
+function requestTimeoutMs(maxTokens) {
+  const estimated = Math.ceil((60 * 60 * 1000 * maxTokens) / 128000);
+  return Math.max(estimated, 10 * 60 * 1000);
+}
+
 module.exports = {
   DEFAULT_MODEL_ID,
   NONSTREAMING_MAX_TOKENS,
@@ -102,4 +121,5 @@ module.exports = {
   resolveClaudeModel,
   messageParams,
   usesStreaming,
+  requestTimeoutMs,
 };

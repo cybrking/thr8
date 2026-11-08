@@ -106,5 +106,6 @@ describe('callWithContinuation', () => {
     expect(text).toBe('{"streamed":true}');
     expect(create).not.toHaveBeenCalled();
     expect(stream.mock.calls[0][0].max_tokens).toBe(64000);
+    expect(stream.mock.calls[0][1]).toEqual({ timeout: 30 * 60 * 1000 });
   });
 });

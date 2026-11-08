@@ -7,7 +7,7 @@
  * threat model or a code fix.
  */
 
-const { NONSTREAMING_MAX_TOKENS } = require('../security/claude-model');
+const { NONSTREAMING_MAX_TOKENS, requestTimeoutMs } = require('../security/claude-model');
 
 function extractJsonText(text) {
   const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
@@ -88,7 +88,7 @@ async function createMessage(client, params) {
     if (typeof client.messages.stream !== 'function') {
       throw new Error('Streaming is required for this max_tokens budget but messages.stream is unavailable');
     }
-    const stream = client.messages.stream(params);
+    const stream = client.messages.stream(params, { timeout: requestTimeoutMs(params.max_tokens) });
     if (!stream || typeof stream.finalMessage !== 'function') {
       throw new Error('Anthropic stream did not provide finalMessage');
     }

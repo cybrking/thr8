@@ -43,7 +43,7 @@ const MAX_TOTAL_SIZE = 120000; // total chars for all files
 class CodebaseScannerAgent {
   constructor(apiKey, model) {
     this.client = new Anthropic({ apiKey });
-    this.model = resolveClaudeModel(model && typeof model === 'object' ? model.id : model);
+    this.model = resolveClaudeModel(model);
   }
 
   _collectFiles(repoPath) {

@@ -5,6 +5,7 @@ const {
   resolveClaudeModel,
   messageParams,
   usesStreaming,
+  requestTimeoutMs,
 } = require('../../src/security/claude-model');
 
 describe('Claude model selection', () => {
@@ -24,6 +25,11 @@ describe('Claude model selection', () => {
     expect(() => resolveClaudeModel('claude-sonnet-4-6')).toThrow('does not substitute');
     expect(() => resolveClaudeModel('claude-opus-5')).toThrow('Unsupported model');
     expect(() => resolveClaudeModel('CLAUDE-SONNET-5-5')).toThrow('Unsupported model');
+    for (const inherited of ['constructor', 'toString', '__proto__', 'valueOf']) {
+      expect(() => resolveClaudeModel(inherited)).toThrow('does not substitute');
+    }
+    expect(() => resolveClaudeModel(function model() {})).toThrow('does not substitute');
+    expect(resolveClaudeModel({ id: 'claude-opus-5-5' }).id).toBe('claude-opus-5-5');
     expect(HISTORICAL_SONNET_46.supported).toBe(false);
     expect(HISTORICAL_SONNET_46.maxTokens.analysis).toBe(16384);
   });
@@ -35,6 +41,8 @@ describe('Claude model selection', () => {
     expect(() => client.calculateNonstreamingTimeout(NONSTREAMING_MAX_TOKENS + 1)).toThrow(/Streaming is required/);
     expect(usesStreaming(21299)).toBe(false);
     expect(usesStreaming(64000)).toBe(true);
+    expect(requestTimeoutMs(64000)).toBe(30 * 60 * 1000);
+    expect(requestTimeoutMs(21299)).toBe(10 * 60 * 1000);
     const headerSource = require('fs').readFileSync(
       require.resolve('@anthropic-ai/sdk/client.js'),
       'utf8'

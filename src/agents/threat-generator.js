@@ -8,7 +8,7 @@ const { parseJsonResponse, callWithContinuation } = require('../utils/parse-json
 class ThreatGeneratorAgent {
   constructor(apiKey, model) {
     this.client = new Anthropic({ apiKey });
-    this.model = resolveClaudeModel(model && typeof model === 'object' ? model.id : model);
+    this.model = resolveClaudeModel(model);
   }
 
   _loadPatterns() {

@@ -326,7 +326,22 @@ describe('Assessment failures and incomplete coverage', () => {
     expect(mockCore.setOutput).toHaveBeenCalledWith('assessment-status', 'failed');
     expect(mockCore.setOutput).not.toHaveBeenCalledWith('threats-found', 0);
     expect(mockCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('does not substitute'));
+    expect(mockCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('v1.2.1'));
     expect(mockCore.startGroup).not.toHaveBeenCalledWith('Running automated remediation...');
+  });
+
+  test('rejects inherited model names before any Claude call', async () => {
+    fs.writeFileSync(path.join(repo, 'route.js'), 'return lookup(id);\n');
+    const previous = mockCore.getInput.getMockImplementation();
+    mockCore.getInput.mockImplementation(name => name === 'model' ? 'constructor' : previous(name));
+    const Anthropic = require('@anthropic-ai/sdk');
+    Anthropic.mockClear();
+    await require('../src/index').run();
+    expect(Anthropic).not.toHaveBeenCalled();
+    expect(mockCore.setOutput).toHaveBeenCalledWith('assessment-status', 'failed');
+    expect(mockCore.setOutput).not.toHaveBeenCalledWith('model', 'claude-sonnet-5-5');
+    expect(mockCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('constructor'));
+    expect(mockCore.startGroup).not.toHaveBeenCalledWith('Scanning codebase...');
   });
 
   test('fails a refused discovery instead of publishing an empty assessment', async () => {
