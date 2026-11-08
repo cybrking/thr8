@@ -1,12 +1,14 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
 const path = require('path');
+const { resolveClaudeModel, messageParams } = require('../security/claude-model');
 const { validateModel } = require('../security/validate-model');
 const { parseJsonResponse, callWithContinuation } = require('../utils/parse-json');
 
 class ThreatGeneratorAgent {
-  constructor(apiKey) {
+  constructor(apiKey, model) {
     this.client = new Anthropic({ apiKey });
+    this.model = resolveClaudeModel(model && typeof model === 'object' ? model.id : model);
   }
 
   _loadPatterns() {
@@ -124,8 +126,7 @@ Tactical recommendations: Provide specific, actionable steps ordered by priority
 
     try {
       const params = {
-        model: 'claude-sonnet-4-6',
-        max_tokens: 16384,
+        ...messageParams(this.model, 'analysis'),
         system: systemPrompt,
         messages: [{
           role: 'user',

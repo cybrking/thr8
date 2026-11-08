@@ -6,11 +6,15 @@ const ThreatGeneratorAgent = require('./agents/threat-generator');
 const ReporterAgent = require('./agents/reporter');
 const RemediatorAgent = require('./agents/remediator');
 const { loadReviewContext, readContextFile } = require('./security/review-context');
+const { resolveClaudeModel } = require('./security/claude-model');
 
 async function run() {
   try {
     const repoPath = process.env.GITHUB_WORKSPACE;
     const apiKey = core.getInput('anthropic-api-key', { required: true });
+    const claudeModel = resolveClaudeModel(core.getInput('model'));
+    core.setOutput('model', claudeModel.id);
+    core.info(`Using Claude model ${claudeModel.id}`);
     const outputFormats = core.getInput('output-formats').split(',').map(s => s.trim()).filter(Boolean);
     const failOnHighRisk = core.getInput('fail-on-high-risk') === 'true';
     const githubToken = core.getInput('github-token');
@@ -40,13 +44,13 @@ async function run() {
 
     // Step 1: Scan codebase + map data flows (PASTA Stage 3)
     core.startGroup('Scanning codebase...');
-    const { systemContext, dataFlows, filesScanned, files, coverage } = await new CodebaseScannerAgent(apiKey).analyze(repoPath, reviewContext);
+    const { systemContext, dataFlows, filesScanned, files, coverage } = await new CodebaseScannerAgent(apiKey, claudeModel).analyze(repoPath, reviewContext);
     core.info(`Scanned ${filesScanned} files`);
     core.endGroup();
 
     // Step 2: PASTA threat analysis (Stages 1-2, 4-7)
     core.startGroup('Generating PASTA threat analysis...');
-    const threatModel = await new ThreatGeneratorAgent(apiKey).generate({
+    const threatModel = await new ThreatGeneratorAgent(apiKey, claudeModel).generate({
       systemContext, dataFlows, externalFindings, files, coverage, reviewContext,
     });
     core.endGroup();
@@ -61,6 +65,16 @@ async function run() {
       head_commit: reviewContext.headCommit || null,
       merge_base: reviewContext.mergeBase || null,
       changed_files: reviewContext.changedFiles,
+      model: claudeModel.id,
+      model_request: {
+        thinking: claudeModel.thinking.type,
+        effort: claudeModel.output_config.effort,
+        max_tokens: {
+          discovery: claudeModel.maxTokens.analysis,
+          generation: claudeModel.maxTokens.analysis,
+          remediation: claudeModel.maxTokens.remediation,
+        },
+      },
     };
     core.setOutput('assessment-status', assessmentStatus);
     if (assessmentStatus === 'incomplete') core.warning('Assessment incomplete: source or diff coverage has omissions');
@@ -90,7 +104,7 @@ async function run() {
     if (assessmentStatus === 'complete' && githubToken && (createIssues || autoFix)) {
       core.startGroup('Running automated remediation...');
       try {
-        const remediator = new RemediatorAgent(apiKey, githubToken);
+        const remediator = new RemediatorAgent(apiKey, githubToken, claudeModel);
         remediationResults = await remediator.remediate({
           threatModel,
           systemContext,
@@ -128,6 +142,7 @@ async function run() {
     // Section 1 — Overall Risk
     core.summary
       .addHeading('PASTA Threat Model Results', 1)
+      .addRaw(`**Model: ${claudeModel.id}** (${claudeModel.thinking.type}, effort ${claudeModel.output_config.effort})\n\n`)
       .addRaw(`**Assessment: ${assessmentStatus}** — ${coverage.filesIncluded}/${coverage.filesDiscovered} discovered files included. ${omissions.length} coverage omissions.\n\n`)
       .addRaw(`**Overall Risk: ${riskStatus}**\n\n`);
 

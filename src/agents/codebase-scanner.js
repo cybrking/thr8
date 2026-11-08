@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
+const { resolveClaudeModel, messageParams } = require('../security/claude-model');
 const { parseJsonResponse, callWithContinuation } = require('../utils/parse-json');
 
 const SKIP_DIRS = new Set([
@@ -40,8 +41,9 @@ const MAX_FILE_SIZE = 8000;    // chars per file
 const MAX_TOTAL_SIZE = 120000; // total chars for all files
 
 class CodebaseScannerAgent {
-  constructor(apiKey) {
+  constructor(apiKey, model) {
     this.client = new Anthropic({ apiKey });
+    this.model = resolveClaudeModel(model && typeof model === 'object' ? model.id : model);
   }
 
   _collectFiles(repoPath) {
@@ -246,8 +248,7 @@ For data_flows: Trace how data moves through the system based on the actual code
 
     try {
       const params = {
-        model: 'claude-sonnet-4-6',
-        max_tokens: 16384,
+        ...messageParams(this.model, 'analysis'),
         system: systemPrompt,
         messages: [{
           role: 'user',

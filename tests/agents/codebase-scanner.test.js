@@ -84,6 +84,82 @@ describe('CodebaseScannerAgent', () => {
     const agent = new CodebaseScannerAgent('test-key');
     await expect(agent.analyze(FIXTURE_PATH)).rejects.toThrow('Codebase scan failed: API error');
   });
+
+  test('sends the Sonnet 5.5 default and reads text after a thinking block', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const response = {
+      content: [
+        { type: 'thinking', thinking: '', signature: 'sig' },
+        { type: 'text', text: JSON.stringify(mockScanResult) },
+      ],
+      stop_reason: 'end_turn',
+    };
+    Anthropic.mockImplementation(() => ({
+      messages: { create: jest.fn().mockResolvedValue(response), stream: jest.fn() },
+    }));
+    const agent = new CodebaseScannerAgent('test-key');
+    const result = await agent.analyze(FIXTURE_PATH);
+    const request = agent.client.messages.create.mock.calls[0][0];
+    expect(request.model).toBe('claude-sonnet-5-5');
+    expect(request.max_tokens).toBe(21299);
+    expect(request.thinking).toEqual({ type: 'between_tools' });
+    expect(request.output_config).toEqual({ effort: 'high' });
+    expect(request.temperature).toBeUndefined();
+    expect(request.fallbacks).toBeUndefined();
+    expect(agent.client.messages.stream).not.toHaveBeenCalled();
+    expect(result.systemContext.tech_stack.frameworks).toContain('Express');
+  });
+
+  test('streams an Opus override through discovery', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const response = {
+      content: [{ type: 'text', text: JSON.stringify(mockScanResult) }],
+      stop_reason: 'end_turn',
+    };
+    const create = jest.fn();
+    Anthropic.mockImplementation(() => ({
+      messages: {
+        create,
+        stream: jest.fn(() => ({ finalMessage: () => Promise.resolve(response) })),
+      },
+    }));
+    const agent = new CodebaseScannerAgent('test-key', 'claude-opus-5-5');
+    await agent.analyze(FIXTURE_PATH);
+    expect(create).not.toHaveBeenCalled();
+    const request = agent.client.messages.stream.mock.calls[0][0];
+    expect(request.model).toBe('claude-opus-5-5');
+    expect(request.thinking).toEqual({ type: 'adaptive' });
+    expect(request.max_tokens).toBe(64000);
+  });
+
+  test('rejects a refusal instead of an empty discovery result', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    Anthropic.mockImplementation(() => ({
+      messages: {
+        create: jest.fn().mockResolvedValue({
+          content: [{ type: 'text', text: JSON.stringify({ system_context: {}, data_flows: { flows: [] } }) }],
+          stop_reason: 'refusal',
+          stop_details: { category: 'cyber' },
+        }),
+      },
+    }));
+    await expect(new CodebaseScannerAgent('test-key').analyze(FIXTURE_PATH))
+      .rejects.toThrow('Model refused the request (cyber)');
+  });
+
+  test('rejects malformed discovery JSON', async () => {
+    const Anthropic = require('@anthropic-ai/sdk');
+    Anthropic.mockImplementation(() => ({
+      messages: {
+        create: jest.fn().mockResolvedValue({
+          content: [{ type: 'text', text: 'not json' }],
+          stop_reason: 'end_turn',
+        }),
+      },
+    }));
+    await expect(new CodebaseScannerAgent('test-key').analyze(FIXTURE_PATH))
+      .rejects.toThrow('Unreadable model JSON');
+  });
 });
 
 

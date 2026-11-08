@@ -107,6 +107,34 @@ describe('ReporterAgent', () => {
     const content = JSON.parse(await fs.readFile(result.json, 'utf-8'));
     expect(content.threatModel).toBeDefined();
     expect(content.projectName).toBe('test-project');
+    expect(content.model).toBeNull();
+  });
+
+  test('records the selected model in markdown, html, and json metadata', async () => {
+    const threatModel = {
+      ...sampleData.threatModel,
+      assessment: {
+        status: 'complete',
+        model: 'claude-opus-5-5',
+        model_request: { thinking: 'adaptive', effort: 'medium' },
+        coverage: { filesIncluded: 1, filesDiscovered: 1, scope: 'test', omissions: [] },
+        mode: 'repository',
+      },
+    };
+    const result = await agent.generate({
+      ...sampleData,
+      threatModel,
+      formats: ['markdown', 'json'],
+      outputDir,
+    });
+    const markdown = await fs.readFile(result.markdown, 'utf-8');
+    const html = await fs.readFile(result.html, 'utf-8');
+    const json = JSON.parse(await fs.readFile(result.json, 'utf-8'));
+    expect(markdown).toContain('**Model**: claude-opus-5-5');
+    expect(markdown).toContain('adaptive');
+    expect(html).toContain('Model claude-opus-5-5');
+    expect(json.model).toBe('claude-opus-5-5');
+    expect(json.threatModel.assessment.model).toBe('claude-opus-5-5');
   });
 
   test('creates output directory if missing', async () => {

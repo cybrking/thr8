@@ -1,93 +1,106 @@
 /**
- * Robust JSON parser for Claude API responses.
- * Handles code fences, truncated JSON (from max_tokens), and raw text.
+ * Read Claude Messages API results.
+ *
+ * Text is taken from every block with type "text". Thinking blocks are not
+ * treated as the assessment. Refusals, context-window stops, truncation, and
+ * JSON that does not parse are errors. Truncated JSON is not repaired into a
+ * threat model or a code fix.
  */
 
+const { NONSTREAMING_MAX_TOKENS } = require('../security/claude-model');
+
 function extractJsonText(text) {
-  // Try code fence extraction first
   const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
   if (fenceMatch) {
     return fenceMatch[1].trim();
   }
-  // Try finding JSON object directly
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
-  if (start !== -1 && end !== -1) {
+  if (start !== -1 && end !== -1 && end > start) {
     return text.substring(start, end + 1);
   }
   return text.trim();
 }
 
-function repairTruncatedJson(text) {
-  // Remove trailing incomplete string/value
-  let json = text.replace(/,\s*"[^"]*$/, '');           // trailing incomplete key
-  json = json.replace(/,\s*"[^"]*":\s*"[^"]*$/, '');    // trailing incomplete string value
-  json = json.replace(/,\s*"[^"]*":\s*\d+[^,\]\}]*$/, ''); // trailing incomplete number
-  json = json.replace(/,\s*"[^"]*":\s*$/, '');           // trailing key with no value
-  json = json.replace(/,\s*\{[^}]*$/, '');               // trailing incomplete object in array
-  json = json.replace(/,\s*$/, '');                      // trailing comma
-
-  // Count open brackets and braces, close them
-  let openBraces = 0;
-  let openBrackets = 0;
-  let inString = false;
-  let escape = false;
-
-  for (const ch of json) {
-    if (escape) { escape = false; continue; }
-    if (ch === '\\' && inString) { escape = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
-    if (inString) continue;
-    if (ch === '{') openBraces++;
-    if (ch === '}') openBraces--;
-    if (ch === '[') openBrackets++;
-    if (ch === ']') openBrackets--;
-  }
-
-  // Close any unclosed structures
-  for (let i = 0; i < openBrackets; i++) json += ']';
-  for (let i = 0; i < openBraces; i++) json += '}';
-
-  return json;
-}
-
 function parseJsonResponse(text) {
+  if (typeof text !== 'string' || !text.trim()) {
+    throw new Error('Unreadable model JSON: empty text');
+  }
   const jsonText = extractJsonText(text);
-
-  // Try parsing as-is first
   try {
     return JSON.parse(jsonText);
-  } catch (_) {
-    // Fall through to repair
+  } catch (error) {
+    throw new Error(`Unreadable model JSON: ${error.message}`);
   }
-
-  // Try repairing truncated JSON
-  try {
-    const repaired = repairTruncatedJson(jsonText);
-    return JSON.parse(repaired);
-  } catch (_) {
-    // Fall through
-  }
-
-  // Last resort: try the raw text
-  return JSON.parse(text);
 }
 
-/**
- * Sleep for a given number of milliseconds.
- */
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Call Claude API with retry on transient errors (429, 529, network errors).
- * Uses exponential backoff.
- */
+function refusalCategory(response) {
+  const details = response && response.stop_details;
+  if (!details || typeof details !== 'object') return null;
+  return typeof details.category === 'string' && details.category ? details.category : null;
+}
+
+function textFromContent(content) {
+  if (!Array.isArray(content)) {
+    throw new Error('Model response did not include content blocks');
+  }
+  let text = '';
+  for (const block of content) {
+    if (!block || block.type !== 'text') continue;
+    if (typeof block.text !== 'string') throw new Error('Model text block was not a string');
+    text += block.text;
+  }
+  return text;
+}
+
+function assertUsableResponse(response) {
+  if (!response || typeof response !== 'object') throw new Error('Model response was empty');
+  const reason = response.stop_reason;
+  if (reason === 'refusal') {
+    const category = refusalCategory(response);
+    throw new Error(`Model refused the request${category ? ` (${category})` : ''}`);
+  }
+  if (reason === 'model_context_window_exceeded') {
+    throw new Error('Model stopped because the context window was exceeded');
+  }
+  if (reason === 'max_tokens') {
+    throw new Error('Model output truncated before completion');
+  }
+  if (reason !== 'end_turn') {
+    throw new Error(`Model stopped with unusable reason: ${reason || 'unknown'}`);
+  }
+}
+
+function readCompleteText(response) {
+  assertUsableResponse(response);
+  const text = textFromContent(response.content);
+  if (!text.trim()) throw new Error('Model completed without text output');
+  return text;
+}
+
+async function createMessage(client, params) {
+  if (!client || !client.messages) throw new Error('Anthropic client is missing messages');
+  if (params.max_tokens > NONSTREAMING_MAX_TOKENS) {
+    if (typeof client.messages.stream !== 'function') {
+      throw new Error('Streaming is required for this max_tokens budget but messages.stream is unavailable');
+    }
+    const stream = client.messages.stream(params);
+    if (!stream || typeof stream.finalMessage !== 'function') {
+      throw new Error('Anthropic stream did not provide finalMessage');
+    }
+    return stream.finalMessage();
+  }
+  return client.messages.create(params);
+}
+
 async function callWithRetry(client, params, maxRetries = 3) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await client.messages.create(params);
+      return await createMessage(client, params);
     } catch (error) {
       const status = error.status || error.statusCode;
       const isRetryable = status === 429 || status === 529 || status === 503;
@@ -102,42 +115,45 @@ async function callWithRetry(client, params, maxRetries = 3) {
   }
 }
 
-/**
- * Call Claude with automatic retry and continuation if response is truncated.
- * Concatenates text across multiple calls until we get a complete response.
- */
 async function callWithContinuation(client, params, maxContinuations = 2) {
   let fullText = '';
+  let messages = params.messages;
 
   for (let i = 0; i <= maxContinuations; i++) {
-    const messages = i === 0
-      ? params.messages
-      : [
-          ...params.messages,
-          { role: 'assistant', content: fullText },
-          { role: 'user', content: 'Continue the JSON output exactly where you left off. Do not repeat any content.' }
-        ];
-
-    const response = await callWithRetry(client, {
-      ...params,
-      messages,
-    });
-
-    fullText += response.content[0].text;
-
-    // If response completed normally, we're done
-    if (response.stop_reason === 'end_turn') {
-      break;
-    }
-    // If we hit max_tokens, continue
-    if (response.stop_reason === 'max_tokens') {
-      console.log(`Response truncated (iteration ${i + 1}), continuing...`);
+    const response = await callWithRetry(client, { ...params, messages });
+    if (response && response.stop_reason === 'max_tokens') {
+      fullText += textFromContent(response.content);
+      if (i === maxContinuations) {
+        throw new Error(`Model output truncated after ${maxContinuations} continuation(s)`);
+      }
+      // Keep the prior assistant blocks, including thinking signatures, and
+      // end the conversation with a user turn. These models reject a prefilled
+      // final assistant message.
+      messages = [
+        ...messages,
+        { role: 'assistant', content: response.content },
+        {
+          role: 'user',
+          content: 'The previous JSON text was cut off. Continue exactly where that text left off. Do not repeat earlier JSON and do not add commentary.',
+        },
+      ];
       continue;
     }
-    break;
+    assertUsableResponse(response);
+    fullText += textFromContent(response.content);
+    if (!fullText.trim()) throw new Error('Model completed without text output');
+    return fullText;
   }
 
-  return fullText;
+  throw new Error(`Model output truncated after ${maxContinuations} continuation(s)`);
 }
 
-module.exports = { parseJsonResponse, callWithContinuation };
+module.exports = {
+  extractJsonText,
+  parseJsonResponse,
+  textFromContent,
+  readCompleteText,
+  createMessage,
+  callWithRetry,
+  callWithContinuation,
+};

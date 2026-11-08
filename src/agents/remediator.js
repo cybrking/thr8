@@ -2,7 +2,8 @@ const core = require('@actions/core');
 const github = require('@actions/github');
 const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
-const { parseJsonResponse } = require('../utils/parse-json');
+const { resolveClaudeModel, messageParams } = require('../security/claude-model');
+const { parseJsonResponse, callWithRetry, readCompleteText } = require('../utils/parse-json');
 const { createIssueIfNotExists } = require('../github/issues');
 const { createFixPR } = require('../github/pull-requests');
 const { isAllowedRemediationPath } = require('../security/remediation-scope');
@@ -41,8 +42,9 @@ Rules:
 const MAX_RELEVANT_FILES = 8;
 
 class RemediatorAgent {
-  constructor(apiKey, githubToken) {
+  constructor(apiKey, githubToken, model) {
     this.client = new Anthropic({ apiKey });
+    this.model = resolveClaudeModel(model && typeof model === 'object' ? model.id : model);
     this.octokit = github.getOctokit(githubToken);
     this.context = github.context;
   }
@@ -223,15 +225,13 @@ class RemediatorAgent {
     ].join('\n');
 
     try {
-      const response = await this.client.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 8192,
+      const response = await callWithRetry(this.client, {
+        ...messageParams(this.model, 'remediation'),
         system: FIX_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userMessage }],
       });
-
-      const text = response.content[0].text;
-      return parseJsonResponse(text);
+      // A truncated or refused fix is not applied. Partial file content is not repaired.
+      return parseJsonResponse(readCompleteText(response));
     } catch (error) {
       core.warning(`[thr8] Fix generation failed for ${vuln.id}: ${error.message}`);
       return null;
