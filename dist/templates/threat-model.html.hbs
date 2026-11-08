@@ -555,6 +555,7 @@
     <div class="exec-meta">
       <span class="risk-badge {{lowercase threatModel.overall_risk_status}}">{{threatModel.overall_risk_status}} Risk</span>
       <span>Generated {{generatedDate}}</span>
+      {{#if threatModel.assessment.model}}<span>Model {{threatModel.assessment.model}}</span>{{/if}}
     </div>
     <div class="stats-grid">
       <div class="stat-card">

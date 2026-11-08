@@ -11,6 +11,11 @@ inputs:
     description: 'Anthropic API key for Claude-powered analysis'
     required: true
 
+  model:
+    description: 'Claude model used for discovery, threat generation, continuations, and optional remediation. Supported: claude-sonnet-5-5 (default) and claude-opus-5-5. Any other ID fails the job. The Action does not substitute a model.'
+    required: false
+    default: 'claude-sonnet-5-5'
+
   config-path:
     description: 'Path to optional .threat-model.yml config'
     required: false
@@ -61,6 +66,8 @@ inputs:
     default: 'HEAD'
 
 outputs:
+  model:
+    description: 'Claude model ID selected for this run'
   assessment-status:
     description: 'complete (within declared scope), incomplete (coverage omissions), or failed (analysis/input error)'
   threats-found:

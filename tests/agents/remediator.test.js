@@ -18,13 +18,18 @@ const highConfidenceResponse = {
   stop_reason: 'end_turn',
 };
 
-function resetAnthropicMock(response = highConfidenceResponse) {
-  const Anthropic = require('@anthropic-ai/sdk');
-  Anthropic.mockImplementation(() => ({
+function anthropicClient(response) {
+  return {
     messages: {
       create: jest.fn().mockResolvedValue(response),
+      stream: jest.fn(() => ({ finalMessage: () => Promise.resolve(response) })),
     },
-  }));
+  };
+}
+
+function resetAnthropicMock(response = highConfidenceResponse) {
+  const Anthropic = require('@anthropic-ai/sdk');
+  Anthropic.mockImplementation(() => anthropicClient(response));
 }
 
 jest.mock('@anthropic-ai/sdk', () => {
@@ -39,6 +44,7 @@ jest.mock('@anthropic-ai/sdk', () => {
         })}],
         stop_reason: 'end_turn',
       }),
+      stream: jest.fn(),
     },
   }));
 });
@@ -400,7 +406,10 @@ describe('RemediatorAgent', () => {
         confidence: 'high', allowedPaths: ['src/query-9.js'],
         files: [{ path: 'src/query-9.js', fixed_content: 'changed' }],
       };
-      resetAnthropicMock({ content: [{ text: JSON.stringify(forgedPlan) }] });
+      resetAnthropicMock({
+        content: [{ type: 'text', text: JSON.stringify(forgedPlan) }],
+        stop_reason: 'end_turn',
+      });
       const { validateRemediationFiles } = require('../../src/security/remediation-scope');
       createFixPR.mockImplementationOnce(async (_octokit, _context, _id, plan, _risk, scope) => {
         validateRemediationFiles(plan, scope);
@@ -445,6 +454,103 @@ describe('RemediatorAgent', () => {
       expect(result.issuesCreated.length).toBeGreaterThanOrEqual(1);
       expect(result.prsCreated.length).toBeGreaterThanOrEqual(1);
       expect(result.errors).toHaveLength(0);
+      const request = agent.client.messages.create.mock.calls[0][0];
+      expect(request.model).toBe('claude-sonnet-5-5');
+      expect(request.thinking).toEqual({ type: 'between_tools' });
+      expect(request.output_config).toEqual({ effort: 'high' });
+      expect(request.max_tokens).toBe(10650);
+      expect(request.temperature).toBeUndefined();
+      expect(request.fallbacks).toBeUndefined();
+    });
+
+    test('reads a text block that follows a thinking block', async () => {
+      resetAnthropicMock({
+        content: [
+          { type: 'thinking', thinking: '', signature: 'sig' },
+          { type: 'text', text: JSON.stringify({
+            confidence: 'high',
+            explanation: 'Added input validation',
+            files: [{ path: 'src/app.js', original_content: 'old', fixed_content: 'new' }],
+          }) },
+        ],
+        stop_reason: 'end_turn',
+      });
+      const agent = new RemediatorAgent('test-key', 'gh-token');
+      await agent.remediate({
+        threatModel: baseThreatModel, systemContext: {}, scannedFiles,
+        createIssues: false, autoFix: true, prSeverity: ['critical'],
+      });
+      expect(createFixPR).toHaveBeenCalledTimes(1);
+    });
+
+    test('streams an explicit Opus override and does not send Sonnet thinking settings', async () => {
+      const agent = new RemediatorAgent('test-key', 'gh-token', 'claude-opus-5-5');
+      await agent.remediate({
+        threatModel: baseThreatModel, systemContext: {}, scannedFiles,
+        createIssues: false, autoFix: true, prSeverity: ['critical'],
+      });
+      expect(agent.client.messages.create).not.toHaveBeenCalled();
+      const request = agent.client.messages.stream.mock.calls[0][0];
+      expect(request.model).toBe('claude-opus-5-5');
+      expect(request.thinking).toEqual({ type: 'adaptive' });
+      expect(request.output_config).toEqual({ effort: 'medium' });
+      expect(request.max_tokens).toBe(64000);
+      expect(createFixPR).toHaveBeenCalledTimes(1);
+    });
+
+    test('does not open a fix PR when the model refuses', async () => {
+      const { warning } = require('@actions/core');
+      resetAnthropicMock({
+        content: [{ type: 'text', text: JSON.stringify({
+          confidence: 'high',
+          files: [{ path: 'src/app.js', original_content: 'old', fixed_content: 'exploit' }],
+        }) }],
+        stop_reason: 'refusal',
+        stop_details: { type: 'refusal', category: 'cyber' },
+      });
+      const agent = new RemediatorAgent('test-key', 'gh-token');
+      const result = await agent.remediate({
+        threatModel: baseThreatModel, systemContext: {}, scannedFiles,
+        createIssues: true, autoFix: true, prSeverity: ['critical'],
+      });
+      expect(createFixPR).not.toHaveBeenCalled();
+      expect(createIssueIfNotExists).toHaveBeenCalledWith(
+        expect.anything(), expect.anything(), expect.objectContaining({ id: 'V-001' }),
+        expect.any(Object), expect.any(Object)
+      );
+      expect(result.prsCreated).toEqual([]);
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining('Model refused the request (cyber)'));
+    });
+
+    test('does not apply a truncated fix even when the partial text is JSON', async () => {
+      resetAnthropicMock({
+        content: [{ type: 'text', text: JSON.stringify({
+          confidence: 'high',
+          files: [{ path: 'src/app.js', original_content: 'old', fixed_content: 'partial' }],
+        }) }],
+        stop_reason: 'max_tokens',
+      });
+      const agent = new RemediatorAgent('test-key', 'gh-token');
+      const result = await agent.remediate({
+        threatModel: baseThreatModel, systemContext: {}, scannedFiles,
+        createIssues: true, autoFix: true, prSeverity: ['critical'],
+      });
+      expect(createFixPR).not.toHaveBeenCalled();
+      expect(result.prsCreated).toEqual([]);
+      expect(result.issuesCreated.length).toBeGreaterThan(0);
+    });
+
+    test('does not apply malformed fix JSON', async () => {
+      resetAnthropicMock({
+        content: [{ type: 'text', text: '{"confidence":"high","files":[{"fixed_content":' }],
+        stop_reason: 'end_turn',
+      });
+      const agent = new RemediatorAgent('test-key', 'gh-token');
+      await agent.remediate({
+        threatModel: baseThreatModel, systemContext: {}, scannedFiles,
+        createIssues: false, autoFix: true, prSeverity: ['critical'],
+      });
+      expect(createFixPR).not.toHaveBeenCalled();
     });
   });
 });

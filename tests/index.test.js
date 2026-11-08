@@ -52,63 +52,69 @@ jest.mock('../src/utils/chrome-finder', () => ({
   CHROME_PATHS: { linux: [], darwin: [], win32: [] },
 }));
 
+function mockRespondToSystem({ system }) {
+  if (system.includes('codebase analysis')) {
+    return Promise.resolve({
+      content: [{ type: 'text', text: JSON.stringify({
+        system_context: {
+          project_name: 'test-app',
+          description: 'Test',
+          tech_stack: { languages: ['JavaScript'], frameworks: ['Express'], databases: [], external_services: [], auth_mechanisms: [], security_controls: [] },
+          infrastructure: { provider: 'None', containerized: false, services: [] },
+          api_surface: { endpoints: [] },
+          sensitive_patterns: []
+        },
+        data_flows: {
+          flows: [{
+            id: 'test_flow', name: 'Test Flow',
+            steps: [{ component: 'API', type: 'application' }],
+            data_classification: 'Internal', trust_boundaries: []
+          }]
+        }
+      })}],
+      stop_reason: 'end_turn'
+    });
+  }
+  if (system.includes('PASTA')) {
+    return Promise.resolve({
+      content: [{ type: 'text', text: JSON.stringify({
+        business_objectives: [{ objective: 'Availability', impact_of_breach: 'High', description: 'Test', tech_context: 'Node.js' }],
+        overall_risk_status: 'MEDIUM',
+        attack_surfaces: [{
+          name: 'API', vector: 'HTTP', weakness: 'No auth',
+          vulnerabilities: [{ id: 'V-001', title: 'Test Vuln', description: 'Test', severity: 'Medium' }]
+        }],
+        attack_scenarios: [{ name: 'Test', objective: 'Test', steps: [{ phase: 'Exploitation', action: 'Test', exploits: ['V-001'] }] }],
+        risk_analysis: [{ risk_id: 'R-001', title: 'Test', pasta_level: 'Medium', business_impact: 'Test', mitigation_complexity: 'Low', linked_vulnerabilities: ['V-001'] }],
+        tactical_recommendations: [{ priority: 'Immediate', action: 'Fix auth', addresses: ['R-001'] }],
+        summary: { total_vulnerabilities: 1, critical: 0, high: 0, medium: 1, low: 0, attack_scenarios: 1, attack_surfaces: 1 }
+      })}],
+      stop_reason: 'end_turn'
+    });
+  }
+  if (system.includes('security engineer')) {
+    return Promise.resolve({
+      content: [{ type: 'text', text: JSON.stringify({
+        confidence: 'high',
+        explanation: 'Added input validation',
+        files: [{ path: 'src/app.js', original_content: 'old', fixed_content: 'new' }],
+      })}],
+      stop_reason: 'end_turn'
+    });
+  }
+  return Promise.resolve({ content: [{ type: 'text', text: '{}' }], stop_reason: 'end_turn' });
+}
+
 jest.mock('@anthropic-ai/sdk', () => {
-  return jest.fn().mockImplementation(() => ({
-    messages: {
-      create: jest.fn().mockImplementation(({ system }) => {
-        if (system.includes('codebase analysis')) {
-          return Promise.resolve({
-            content: [{ type: 'text', text: JSON.stringify({
-              system_context: {
-                project_name: 'test-app',
-                description: 'Test',
-                tech_stack: { languages: ['JavaScript'], frameworks: ['Express'], databases: [], external_services: [], auth_mechanisms: [], security_controls: [] },
-                infrastructure: { provider: 'None', containerized: false, services: [] },
-                api_surface: { endpoints: [] },
-                sensitive_patterns: []
-              },
-              data_flows: {
-                flows: [{
-                  id: 'test_flow', name: 'Test Flow',
-                  steps: [{ component: 'API', type: 'application' }],
-                  data_classification: 'Internal', trust_boundaries: []
-                }]
-              }
-            })}],
-            stop_reason: 'end_turn'
-          });
-        }
-        if (system.includes('PASTA')) {
-          return Promise.resolve({
-            content: [{ type: 'text', text: JSON.stringify({
-              business_objectives: [{ objective: 'Availability', impact_of_breach: 'High', description: 'Test', tech_context: 'Node.js' }],
-              overall_risk_status: 'MEDIUM',
-              attack_surfaces: [{
-                name: 'API', vector: 'HTTP', weakness: 'No auth',
-                vulnerabilities: [{ id: 'V-001', title: 'Test Vuln', description: 'Test', severity: 'Medium' }]
-              }],
-              attack_scenarios: [{ name: 'Test', objective: 'Test', steps: [{ phase: 'Exploitation', action: 'Test', exploits: ['V-001'] }] }],
-              risk_analysis: [{ risk_id: 'R-001', title: 'Test', pasta_level: 'Medium', business_impact: 'Test', mitigation_complexity: 'Low', linked_vulnerabilities: ['V-001'] }],
-              tactical_recommendations: [{ priority: 'Immediate', action: 'Fix auth', addresses: ['R-001'] }],
-              summary: { total_vulnerabilities: 1, critical: 0, high: 0, medium: 1, low: 0, attack_scenarios: 1, attack_surfaces: 1 }
-            })}],
-            stop_reason: 'end_turn'
-          });
-        }
-        if (system.includes('security engineer')) {
-          return Promise.resolve({
-            content: [{ type: 'text', text: JSON.stringify({
-              confidence: 'high',
-              explanation: 'Added input validation',
-              files: [{ path: 'src/app.js', original_content: 'old', fixed_content: 'new' }],
-            })}],
-            stop_reason: 'end_turn'
-          });
-        }
-        return Promise.resolve({ content: [{ type: 'text', text: '{}' }], stop_reason: 'end_turn' });
-      })
-    }
-  }));
+  return jest.fn().mockImplementation(() => {
+    const create = jest.fn().mockImplementation(mockRespondToSystem);
+    return {
+      messages: {
+        create,
+        stream: jest.fn(params => ({ finalMessage: () => mockRespondToSystem(params) })),
+      },
+    };
+  });
 });
 
 const FIXTURE_PATH = path.join(__dirname, 'fixtures/express-postgres');
@@ -269,6 +275,11 @@ describe('Assessment failures and incomplete coverage', () => {
     expect(mockCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('incomplete'));
     const report = JSON.parse(fs.readFileSync(path.join(repo, 'threat-model/threat-model.json')));
     expect(report.threatModel.assessment.coverage.omissions).toContainEqual(expect.stringContaining('Truncated source'));
+    expect(report.model).toBe('claude-sonnet-5-5');
+    expect(report.threatModel.assessment.model).toBe('claude-sonnet-5-5');
+    expect(report.threatModel.assessment.model_request.thinking).toBe('between_tools');
+    expect(report.threatModel.assessment.model_request.effort).toBe('high');
+    expect(mockCore.setOutput).toHaveBeenCalledWith('model', 'claude-sonnet-5-5');
   });
   test('rejects unsupported citations in feature reviews instead of issuing remediation', async () => {
     fs.writeFileSync(path.join(repo, 'route.js'), 'return workspaceUsers;');
@@ -278,6 +289,79 @@ describe('Assessment failures and incomplete coverage', () => {
     await require('../src/index').run();
     expect(mockCore.setOutput).toHaveBeenCalledWith('assessment-status', 'failed');
     expect(mockCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('missing attacker_prerequisites'));
+    expect(mockCore.startGroup).not.toHaveBeenCalledWith('Running automated remediation...');
+  });
+
+  test('records an Opus override in report metadata and streams that model', async () => {
+    fs.writeFileSync(path.join(repo, 'route.js'), 'return lookup(id);\n');
+    const previous = mockCore.getInput.getMockImplementation();
+    mockCore.getInput.mockImplementation(name => name === 'model' ? 'claude-opus-5-5' : previous(name));
+    await require('../src/index').run();
+    const Anthropic = require('@anthropic-ai/sdk');
+    const streams = Anthropic.mock.results.flatMap(result => result.value.messages.stream.mock.calls);
+    expect(streams.length).toBeGreaterThan(0);
+    for (const [params] of streams) {
+      expect(params.model).toBe('claude-opus-5-5');
+      expect(params.thinking).toEqual({ type: 'adaptive' });
+      expect(params.output_config).toEqual({ effort: 'medium' });
+      expect(params.max_tokens).toBe(64000);
+      expect(params.temperature).toBeUndefined();
+      expect(params.fallbacks).toBeUndefined();
+    }
+    const report = JSON.parse(fs.readFileSync(path.join(repo, 'threat-model/threat-model.json')));
+    expect(report.model).toBe('claude-opus-5-5');
+    expect(report.threatModel.assessment.model_request.thinking).toBe('adaptive');
+    expect(mockCore.setOutput).toHaveBeenCalledWith('model', 'claude-opus-5-5');
+    expect(mockCore.setFailed).not.toHaveBeenCalled();
+  });
+
+  test('rejects an unknown model without calling Claude or publishing a zero count', async () => {
+    fs.writeFileSync(path.join(repo, 'route.js'), 'return lookup(id);\n');
+    const previous = mockCore.getInput.getMockImplementation();
+    mockCore.getInput.mockImplementation(name => name === 'model' ? 'claude-sonnet-4-6' : previous(name));
+    const Anthropic = require('@anthropic-ai/sdk');
+    Anthropic.mockClear();
+    await require('../src/index').run();
+    expect(Anthropic).not.toHaveBeenCalled();
+    expect(mockCore.setOutput).toHaveBeenCalledWith('assessment-status', 'failed');
+    expect(mockCore.setOutput).not.toHaveBeenCalledWith('threats-found', 0);
+    expect(mockCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('does not substitute'));
+    expect(mockCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('v1.2.1'));
+    expect(mockCore.startGroup).not.toHaveBeenCalledWith('Running automated remediation...');
+  });
+
+  test('rejects inherited model names before any Claude call', async () => {
+    fs.writeFileSync(path.join(repo, 'route.js'), 'return lookup(id);\n');
+    const previous = mockCore.getInput.getMockImplementation();
+    mockCore.getInput.mockImplementation(name => name === 'model' ? 'constructor' : previous(name));
+    const Anthropic = require('@anthropic-ai/sdk');
+    Anthropic.mockClear();
+    await require('../src/index').run();
+    expect(Anthropic).not.toHaveBeenCalled();
+    expect(mockCore.setOutput).toHaveBeenCalledWith('assessment-status', 'failed');
+    expect(mockCore.setOutput).not.toHaveBeenCalledWith('model', 'claude-sonnet-5-5');
+    expect(mockCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('constructor'));
+    expect(mockCore.startGroup).not.toHaveBeenCalledWith('Scanning codebase...');
+  });
+
+  test('fails a refused discovery instead of publishing an empty assessment', async () => {
+    fs.writeFileSync(path.join(repo, 'route.js'), 'return lookup(id);\n');
+    const Anthropic = require('@anthropic-ai/sdk');
+    Anthropic.mockImplementation(() => ({
+      messages: {
+        create: jest.fn().mockResolvedValue({
+          content: [{ type: 'text', text: '{"system_context":{},"data_flows":{"flows":[]}}' }],
+          stop_reason: 'refusal',
+          stop_details: { type: 'refusal', category: 'cyber' },
+        }),
+        stream: jest.fn(),
+      },
+    }));
+    await require('../src/index').run();
+    expect(mockCore.setOutput).toHaveBeenCalledWith('assessment-status', 'failed');
+    expect(mockCore.setFailed).toHaveBeenCalledWith(expect.stringContaining('Model refused the request (cyber)'));
+    expect(mockCore.setOutput).not.toHaveBeenCalledWith('threats-found', 0);
+    expect(fs.existsSync(path.join(repo, 'threat-model/threat-model.json'))).toBe(false);
     expect(mockCore.startGroup).not.toHaveBeenCalledWith('Running automated remediation...');
   });
 });

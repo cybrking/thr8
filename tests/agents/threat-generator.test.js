@@ -114,4 +114,44 @@ describe('ThreatGeneratorAgent', () => {
     const agent = new ThreatGeneratorAgent('test-key');
     await expect(agent.generate({ dataFlows: { flows: [] } })).rejects.toThrow('Threat generation failed: fail');
   });
+
+  test('sends the selected model on the generation request', async () => {
+    const agent = new ThreatGeneratorAgent('test-key', 'claude-opus-5-5');
+    const response = {
+      content: [
+        { type: 'thinking', thinking: '', signature: 'keep' },
+        { type: 'text', text: JSON.stringify(mockPastaModel) },
+      ],
+      stop_reason: 'end_turn',
+    };
+    agent.client.messages.stream = jest.fn(() => ({ finalMessage: () => Promise.resolve(response) }));
+    const result = await agent.generate({ dataFlows: { flows: [] } });
+    const request = agent.client.messages.stream.mock.calls[0][0];
+    expect(request.model).toBe('claude-opus-5-5');
+    expect(request.thinking).toEqual({ type: 'adaptive' });
+    expect(request.output_config).toEqual({ effort: 'medium' });
+    expect(agent.client.messages.create).not.toHaveBeenCalled();
+    expect(result.summary.total_vulnerabilities).toBe(1);
+  });
+
+  test('rejects a refused generation instead of returning the refusal text', async () => {
+    const agent = new ThreatGeneratorAgent('test-key');
+    agent.client.messages.create.mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ attack_surfaces: [], overall_risk_status: 'LOW' }) }],
+      stop_reason: 'refusal',
+      stop_details: { category: 'general_harms' },
+    });
+    await expect(agent.generate({ dataFlows: { flows: [] } }))
+      .rejects.toThrow('Model refused the request (general_harms)');
+  });
+
+  test('rejects truncated generation instead of repairing a partial model', async () => {
+    const agent = new ThreatGeneratorAgent('test-key');
+    agent.client.messages.create.mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify(mockPastaModel).slice(0, 40) }],
+      stop_reason: 'max_tokens',
+    });
+    await expect(agent.generate({ dataFlows: { flows: [] } }))
+      .rejects.toThrow('truncated');
+  });
 });

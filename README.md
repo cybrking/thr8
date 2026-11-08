@@ -2,7 +2,7 @@
 
 [![GitHub Action](https://img.shields.io/badge/GitHub_Action-PASTA_Threat_Model-red?logo=github-actions&logoColor=white)](https://github.com/marketplace/actions/pasta-threat-model-generator)
 
-A GitHub Action that automatically generates PASTA (Process for Attack Simulation and Threat Analysis) threat models by analyzing your repository's code, infrastructure, and dependencies. Collects source files and uses Claude for system discovery, data-flow inference and threat reasoning. Also includes a Claude Code plugin for reviewed security context and feature/diff reviews.
+A GitHub Action that automatically generates PASTA (Process for Attack Simulation and Threat Analysis) threat models by analyzing your repository's code, infrastructure, and dependencies. Collects source files and uses Claude for system discovery, data-flow inference and threat reasoning. Also includes a Claude Code plugin for reviewed security context and feature/diff reviews. The plugin keeps the Claude Code session model; only the Action accepts `model`.
 
 ## Features
 
@@ -44,7 +44,7 @@ This first version tracks decisions in a human-reviewed Markdown ledger. It does
 
 ## Assessment integrity and change review in CI
 
-Scanner/model API errors and malformed responses fail the Action without publishing a zero threat count. Counts are derived from validated vulnerabilities. Feature/context/diff reviews require exact source citations plus attacker prerequisites, assumptions, control scope, a security requirement and a negative-test proposal. Citation validation establishes that the quoted source exists; it does not establish that the security interpretation is correct.
+Scanner/model API errors, refusals, truncated output, and malformed responses fail the Action without publishing a zero threat count. Reports include the selected model. Counts are derived from validated vulnerabilities. Feature/context/diff reviews require exact source citations plus attacker prerequisites, assumptions, control scope, a security requirement and a negative-test proposal. Citation validation establishes that the quoted source exists; it does not establish that the security interpretation is correct.
 
 Reports include mode, commits and scanner coverage. Files are capped at 8,000 characters and the total source budget is 120,000 characters; diffs are capped at 60,000 characters. Source truncation, budget exclusions, unreadable content and existing changed files outside scanner scope mark the assessment incomplete, fail the job and disable issue/fix creation. Intentionally excluded dependencies, generated files, symlinks and hidden directories other than `.github` remain outside the declared scope. A complete result means analysis completed within that scope, not that the repository is secure. Large repositories, including large lockfiles, can need a narrower pilot scope or future retrieval improvements.
 
@@ -120,6 +120,7 @@ jobs:
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `anthropic-api-key` | Yes | — | Anthropic API key for Claude-powered analysis |
+| `model` | No | `claude-sonnet-5-5` | `claude-sonnet-5-5` or `claude-opus-5-5`. Any other ID fails the job |
 | `output-formats` | No | `markdown,json,html` | Comma-separated output formats (`markdown`, `json`, `html`, `pdf`) |
 | `fail-on-high-risk` | No | `false` | Fail the build if critical-risk vulnerabilities are found |
 | `config-path` | No | `.threat-model.yml` | Path to optional configuration file |
@@ -137,6 +138,7 @@ jobs:
 
 | Output | Description |
 |--------|-------------|
+| `model` | Claude model ID used for discovery, generation, continuations, and remediation |
 | `assessment-status` | `complete` within declared scope, `incomplete` for coverage omissions, or `failed` for input/analysis errors |
 | `threats-found` | Total number of vulnerabilities identified |
 | `high-risk-count` | Number of critical-risk vulnerabilities |
@@ -305,6 +307,20 @@ with:
 
 ## Examples
 
+### Choose Opus 5.5
+
+`@v1` does not accept `model` until the major tag moves. Pin the commit that contains this input, or `main` after it is merged:
+
+```yaml
+- name: Generate Threat Model
+  uses: cybrking/thr8@main
+  with:
+    anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+    model: claude-opus-5-5
+```
+
+Omit `model` to use `claude-sonnet-5-5`. An unsupported ID fails the job. The Action does not fall back to another model.
+
 ### Fail build on critical findings
 
 ```yaml
@@ -393,9 +409,13 @@ The codebase scanner automatically detects:
 
 ## Cost
 
-The Action makes two initial Claude API calls using `claude-sonnet-4-6`: discovery and threat generation. Long responses can require continuation calls. Remediation adds a call per attempted fix. Cost depends on source/diff size, response length and current Anthropic pricing; the Action now passes source evidence into reasoning as well as discovery.
+The Action makes two initial Claude API calls, discovery and threat generation, using the selected `model`. The default is `claude-sonnet-5-5`. Set `model: claude-opus-5-5` to use Opus 5.5 for discovery, generation, continuations, and optional remediation. Long responses can require continuation calls. Remediation adds a call per attempted fix.
 
-The Claude Code plugin uses your configured Claude Code access and does not require a separate Anthropic API key. Its token usage follows your Claude Code plan.
+Published token prices checked on 2026-11-08 are $2 / $10 per million input/output tokens for Sonnet 5.5 and $4 / $20 for Opus 5.5. Sonnet 5.5 requests use `thinking.type: between_tools` at effort `high`, so there is no up-front thinking. Opus 5.5 always uses adaptive thinking at effort `medium`, and those thinking tokens are billed as output tokens. The same text is about 30 percent more tokens than on Claude Sonnet 4.6. `max_tokens` is a cap, not a charge: billing follows tokens generated. Opus streams with a 30 minute client timeout, the SDK's 60-minutes-per-128k-token ratio applied to its 64000 cap. Each continuation is another call with the same cap. A refused or truncated response fails the assessment, or skips a fix, instead of becoming a clean report. This repository has not measured live latency or cost. `claude-sonnet-4-6` is rejected rather than run with 5.5 request settings; that model remains on the v1.2.1 tag.
+
+The Claude Code plugin uses your configured Claude Code access and does not require a separate Anthropic API key. Its token usage follows your Claude Code plan. The Action `model` input does not change the plugin model.
+
+`v1` currently points at v1.2.1 (April 2026), which hardcodes `claude-sonnet-4-6` and has no `model` input. The input is on `main` only after this change merges. Moving `v1` is a separate release step; see [docs/release-notes/v1.3.0.md](docs/release-notes/v1.3.0.md).
 
 ## Development
 

@@ -171,6 +171,7 @@ class ReporterAgent {
         await fs.writeFile(jsonPath, JSON.stringify({
           generated: new Date().toISOString(),
           projectName: projectName || 'Unknown Project',
+          model: threatModel.assessment && threatModel.assessment.model || null,
           threatModel,
           dataFlows,
         }, null, 2));
